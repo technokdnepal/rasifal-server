@@ -9,60 +9,61 @@ const PORT = process.env.PORT || 3000;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 app.get('/', (req, res) => {
-    res.send('<h1>Rasifal API Active</h1><a href="/api/rasifal">Check Data</a>');
+    res.send('<h1>Hamro Patro Rasifal API - Live</h1><a href="/api/rasifal">Check Data</a>');
 });
 
-async function getHtml(url) {
+async function scrapeHamroPatro() {
     try {
+        const url = 'https://www.hamropatro.com/rashifal';
         const response = await axios.get(url, {
-            timeout: 12000,
+            timeout: 15000,
             headers: {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'ne-NP,ne;q=0.9,en-US;q=0.8'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
-        return response.data;
-    } catch (e) { return null; }
+
+        const $ = cheerio.load(response.data);
+        let results = [];
+        
+        // हाम्रो पात्रोको नयाँ स्ट्रक्चर अनुसार डाटा तान्ने लजिक
+        $('.item').each((i, el) => {
+            const sign = $(el).find('h3').text().trim();
+            const prediction = $(el).find('.desc p').text().trim();
+            
+            if (sign && prediction.length > 20) {
+                // अगाडिका अनावश्यक चिन्ह र अक्षर हटाउने
+                const cleanPrediction = prediction.replace(new RegExp(`^${sign}\\s*[-\\:]*\\s*`, 'i'), '').trim();
+                results.push({ sign, prediction: cleanPrediction });
+            }
+        });
+
+        return results;
+    } catch (e) {
+        console.error("Scraping failed:", e.message);
+        return [];
+    }
 }
 
 app.get('/api/rasifal', async (req, res) => {
-    const signs = ['मेष', 'वृष', 'मिथुन', 'कर्कट', 'सिंह', 'कन्या', 'तुला', 'वृश्चिक', 'धनु', 'मकर', 'कुम्भ', 'मीन'];
+    console.log("📡 हाम्रो पात्रोबाट डाटा तान्दै...");
+    let rawData = await scrapeHamroPatro();
     
-    // १. पहिलो स्रोत प्रयास गर्ने
-    let html = await getHtml('https://nepalipatro.com.np/nepali-rashifal');
-    
-    // २. यदि पहिलो ब्लक भएमा दोस्रो स्रोत प्रयास गर्ने
-    if (!html) {
-        html = await getHtml('https://www.asali-nepalipatro.com/rashifal');
+    if (rawData.length === 0) {
+        return res.json({ error: "हाम्रो पात्रोबाट डाटा आएन। कृपया फेरि प्रयास गर्नुहोस्।" });
     }
 
-    if (!html) return res.json({ error: "सबै स्रोतहरू ब्लक भए। कृपया १ मिनेट पछि प्रयास गर्नुहोस्।" });
-
-    const $ = cheerio.load(html);
-    let rawResults = [];
-
-    // कुनै पनि क्लास वा ट्यागमा लुकेको डाटा खोज्ने लजिक
-    $('div, p, span, h3').each((i, el) => {
-        let text = $(el).text().trim();
-        signs.forEach(sign => {
-            if (text.startsWith(sign) && text.length > 50 && !rawResults.find(r => r.sign === sign)) {
-                rawResults.push({ sign, prediction: text.replace(sign, '').replace(/^[:\-\s\.\d]+/, '').trim() });
-            }
-        });
-    });
-
-    if (rawResults.length < 8) return res.json({ error: "डाटा पूर्ण रूपमा भेटिएन।" });
-
     try {
+        console.log("🤖 एआईले टेक्स्ट सफा गर्दैछ...");
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const prompt = `तपाईं एक सम्पादक हुनुहुन्छ। यो राशिफललाई २ छोटा वाक्यमा सरल नेपालीमा लेख्नुहोस्। सबै चिन्ह हटाउनुहोस्। जवाफ JSON Array मा मात्र दिनुहोस्: [{"sign": "...", "prediction": "..."}]\n\nINPUT: ${JSON.stringify(rawResults)}`;
+        const prompt = `तपाईं एक नेपाली राशिफल सम्पादक हुनुहुन्छ। यो राशिफललाई २ छोटा वाक्यमा सरल नेपालीमा लेख्नुहोस्। सबै अनावश्यक चिन्ह हटाउनुहोस्। जवाफ JSON Array मा मात्र दिनुहोस्: [{"sign": "...", "prediction": "..."}]\n\nINPUT: ${JSON.stringify(rawData)}`;
+        
         const result = await model.generateContent(prompt);
-        let finalJson = JSON.parse(result.response.text().replace(/```json|```/g, '').trim());
-        res.json({ data: finalJson });
+        let text = result.response.text().replace(/```json|```/g, '').trim();
+        res.json({ data: JSON.parse(text) });
     } catch (e) {
-        res.json({ data: rawResults });
+        // AI फेल भएमा काँचो डाटा पठाउने
+        res.json({ data: rawData });
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Hamro Patro Server on port ${PORT}`));
