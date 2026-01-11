@@ -1,165 +1,172 @@
-const express = require('express');
-const axios = require('axios');
-const cheerio = require('cheerio');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-require('dotenv').config();
+const express = require("express");
+const axios = require("axios");
+const cheerio = require("cheerio");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ===============================
-   Gemini AI Setup (Future-proof)
-================================ */
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
+/* =========================
+   GEMINI SETUP
+========================= */
+const genAI = process.env.GEMINI_API_KEY
+  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  : null;
 
-/* ===============================
-   Simple Daily Cache
-================================ */
-let cache = {
-  date: "",
-  data: null
+/* =========================
+   COMMON HEADERS (ANTI-403)
+========================= */
+const HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  "Accept-Language": "ne-NP,ne;q=0.9,en-US;q=0.8,en;q=0.7",
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
 };
 
-/* ===============================
-   Manual Cleaner (Fail-Safe)
-================================ */
-function manualCleaner(raw) {
-  return raw
-    .replace(/^.*?\)\s*/, '')          // मेष (चु, चे...) हटाउने
-    .replace(/Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces/gi, '')
-    .replace(/BoManma/gi, '')
-    .split("आजको शुभ रंग")[0]
-    .split("शुभ अंक")[0]
+/* =========================
+   MANUAL CLEANER (FAIL SAFE)
+========================= */
+function manualCleaner(text) {
+  if (!text) return "";
+
+  return text
+    .replace(/\(.*?\)/g, "")
+    .replace(/Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces/gi, "")
+    .replace(/चु|चे|चो|ला|लि|लु|ले|लो/gi, "")
+    .replace(/आजको शुभ रंग.*$/gi, "")
+    .replace(/शुभ अंक.*$/gi, "")
+    .replace(/[:\-]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-/* ===============================
-   Gemini Call (Single Sign)
-================================ */
-async function callGeminiForSingleSign(sign, rawPrediction) {
+/* =========================
+   GEMINI CLEANER (OPTIONAL)
+========================= */
+async function cleanWithAI(sign, rawText) {
+  if (!genAI) return manualCleaner(rawText);
+
   try {
-    const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash",
+    });
 
     const prompt = `
-तपाईं एक प्रोफेसनल नेपाली सम्पादक हुनुहुन्छ।
-'${sign}' राशिको यो राशिफलबाट:
-- सुरुको नाम र (चु, चे, चो...) हटाउनुहोस्
-- "आजको शुभ रंग" र "शुभ अंक" हटाउनुहोस्
-- केवल मुख्य अर्थ २–३ वाक्यमा सरल नेपालीमा लेख्नुहोस्
-- कुनै heading, emoji वा explanation नदिनुहोस्
+तपाईं एक प्रोफेशनल नेपाली सम्पादक हुनुहुन्छ।
+'${sign}' राशिको तलको टेक्स्टलाई २–३ वाक्यमा
+सरल, शुद्ध नेपाली भाषामा लेख्नुहोस्।
+नाम, चु-चे-चो, शुभ रंग, शुभ अंक हटाउनुहोस्।
+केवल राशिफल मात्र लेख्नुहोस्।
 
 INPUT:
-${rawPrediction}
+${rawText}
 `;
 
-    const result = await Promise.race([
-      model.generateContent(prompt),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("AI Timeout")), 8000)
-      )
-    ]);
-
-    const text = result.response.text().trim();
-    return text.length > 20 ? text : manualCleaner(rawPrediction);
-
+    const result = await model.generateContent(prompt);
+    return result.response.text().trim();
   } catch (e) {
-    console.log(`⚠️ AI failed for ${sign}, using manual cleaner`);
-    return manualCleaner(rawPrediction);
+    console.log("⚠️ Gemini failed, manual cleaner used");
+    return manualCleaner(rawText);
   }
 }
 
-/* ===============================
-   API Endpoint
-================================ */
-app.get('/api/rasifal', async (req, res) => {
+/* =========================
+   SCRAPE: HAMRO PATRO
+========================= */
+async function fetchFromHamroPatro() {
+  const url = "https://www.hamropatro.com/rashifal";
+  const response = await axios.get(url, {
+    headers: HEADERS,
+    timeout: 20000,
+  });
+
+  const $ = cheerio.load(response.data);
+  let data = [];
+
+  $(".item").each((i, el) => {
+    const sign = $(el).find("h3").text().trim();
+    const text = $(el).find(".desc p").text().trim();
+    if (sign && text.length > 30) {
+      data.push({ sign, text });
+    }
+  });
+
+  if (data.length < 6) throw new Error("Hamro Patro blocked / empty");
+  return data;
+}
+
+/* =========================
+   SCRAPE: EKANTIPUR (FALLBACK)
+========================= */
+async function fetchFromEkantipur() {
+  const url = "https://ekantipur.com/horoscope";
+  const response = await axios.get(url, {
+    headers: HEADERS,
+    timeout: 20000,
+  });
+
+  const $ = cheerio.load(response.data);
+  let data = [];
+
+  $(".item").each((i, el) => {
+    const sign = $(el).find("h2,h3").first().text().trim();
+    const text = $(el).find("p").text().trim();
+    if (sign && text.length > 30) {
+      data.push({ sign, text });
+    }
+  });
+
+  if (data.length < 6) throw new Error("Ekantipur scrape failed");
+  return data;
+}
+
+/* =========================
+   API ROUTE
+========================= */
+app.get("/api/rasifal", async (req, res) => {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    console.log("🔍 Trying Hamro Patro...");
+    let rawData;
 
-    /* ===== Cache hit ===== */
-    if (cache.date === today && cache.data) {
-      return res.json({
-        status: "SUCCESS",
-        cached: true,
-        updatedAt: today,
-        data: cache.data
-      });
+    try {
+      rawData = await fetchFromHamroPatro();
+      console.log("✅ Hamro Patro success");
+    } catch (e) {
+      console.log("⚠️ Hamro Patro failed → Ekantipur");
+      rawData = await fetchFromEkantipur();
     }
 
-    console.log("📡 Hamro Patro बाट राशिफल तान्दै...");
+    let final = [];
 
-    const response = await axios.get(
-      'https://www.hamropatro.com/rashifal',
-      {
-        timeout: 15000,
-        headers: {
-          "User-Agent": "Googlebot"
-        }
-      }
-    );
-
-    const $ = cheerio.load(response.data);
-    let scrapedData = [];
-
-    $('.item').each((i, el) => {
-      const sign = $(el).find('h3').text().trim();
-      const text = $(el).find('.desc p').text().trim();
-
-      if (sign && text && text.length > 30) {
-        scrapedData.push({ sign, text });
-      }
-    });
-
-    if (scrapedData.length === 0) {
-      throw new Error("No horoscope data scraped");
-    }
-
-    console.log("🤖 १२ राशिलाई AI बाट प्रोसेस गर्दै...");
-    let finalResults = [];
-
-    for (const item of scrapedData) {
-      console.log(`➡ ${item.sign}`);
-      const cleanPrediction =
-        await callGeminiForSingleSign(item.sign, item.text);
-
-      finalResults.push({
+    for (const item of rawData) {
+      const cleaned = await cleanWithAI(item.sign, item.text);
+      final.push({
         sign: item.sign,
-        prediction: cleanPrediction
+        prediction: cleaned,
       });
     }
-
-    /* ===== Save Cache ===== */
-    cache = {
-      date: today,
-      data: finalResults
-    };
 
     res.json({
       status: "SUCCESS",
-      cached: false,
-      source: "hamropatro",
-      ai: true,
-      updatedAt: new Date().toISOString(),
-      data: finalResults
+      source: "AUTO (HamroPatro → Ekantipur)",
+      data: final,
     });
-
   } catch (e) {
-    console.error("❌ Error:", e.message);
-
     res.status(500).json({
       status: "ERROR",
       message: "राशिफल अपडेट गर्न सकिएन",
-      detail: e.message
+      detail: e.message,
     });
   }
 });
 
-/* ===============================
-   Health Check
-================================ */
-app.get('/', (req, res) => {
-  res.send('✅ Rasifal Server is Online & Stable');
+/* =========================
+   ROOT
+========================= */
+app.get("/", (req, res) => {
+  res.send("✅ Rasifal Server Online");
 });
 
 app.listen(PORT, () => {
