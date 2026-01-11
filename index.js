@@ -12,55 +12,63 @@ app.get('/', (req, res) => {
     res.send('<h1>Rasifal API Active!</h1><a href="/api/rasifal">Check Data</a>');
 });
 
-// मुख्य स्क्र्यापिङ फङ्सन (Multiple Sources)
-async function fetchRasifal() {
-    const sources = [
-        'https://nepalipatro.com.np/nepali-rashifal',
-        'https://www.asali-nepalipatro.com/rashifal' // ब्याकअप साइट
-    ];
+async function fetchWithRetry() {
+    const signs = ['मेष', 'वृष', 'मिथुन', 'कर्कट', 'सिंह', 'कन्या', 'तुला', 'वृश्चिक', 'धनु', 'मकर', 'कुम्भ', 'मीन'];
+    const url = 'https://nepalipatro.com.np/nepali-rashifal';
+    
+    try {
+        const response = await axios.get(url, {
+            timeout: 15000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'ne,en-US;q=0.9,en;q=0.8',
+            }
+        });
 
-    for (let url of sources) {
-        try {
-            const response = await axios.get(url, {
-                timeout: 10000,
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0' }
+        const $ = cheerio.load(response.data);
+        let results = [];
+
+        // यो लजिकले अब वेबसाइटको कुनै पनि कुनामा भएको टेक्स्ट तान्छ
+        $('.social-body, .rashifal-detail, div.card-body, p').each((i, el) => {
+            let text = $(el).text().trim();
+            signs.forEach(sign => {
+                if (text.startsWith(sign) && text.length > 40 && !results.find(r => r.sign === sign)) {
+                    results.push({ sign, prediction: text.replace(sign, '').replace(/^[:\-\s]+/, '').trim() });
+                }
             });
-            const $ = cheerio.load(response.data);
-            const signs = ['मेष', 'वृष', 'मिथुन', 'कर्कट', 'सिंह', 'कन्या', 'तुला', 'वृश्चिक', 'धनु', 'मकर', 'कुम्भ', 'मीन'];
-            let results = [];
+        });
 
-            // यो लजिकले अब जुनसुकै क्लासमा भए पनि डाटा खोज्छ
-            $('div, p, span').each((i, el) => {
-                let text = $(el).text().trim();
-                signs.forEach(sign => {
-                    if (text.startsWith(sign) && text.length > 50 && !results.find(r => r.sign === sign)) {
-                        results.push({ sign, prediction: text.replace(sign, '').trim() });
-                    }
-                });
-            });
-
-            if (results.length >= 6) return results; // यदि आधाभन्दा बढी राशि भेटिए सफल मान्ने
-        } catch (e) { console.log(`Source ${url} failed`); }
+        return results;
+    } catch (e) {
+        console.error("Scraping error:", e.message);
+        return [];
     }
-    return [];
 }
 
 async function cleanWithAI(rawData) {
     try {
         if (!process.env.GEMINI_API_KEY) return null;
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        let prompt = `तपाईं सम्पादक हुनुहुन्छ। तलको राशिफललाई २ वाक्यमा सरल नेपालीमा लेख्नुहोस्। चिन्हहरू हटाउनुहोस्।\n\nJSON: ${JSON.stringify(rawData)}`;
+        let prompt = `तपाईं एक नेपाली राशिफल सम्पादक हुनुहुन्छ। तलको राशिफललाई २ छोटा वाक्यमा सरल नेपालीमा लेख्नुहोस्। 
+        सुरुमा आउने "-", ":", वा "चु, चे" जस्ता सबै चिन्ह र अनावश्यक अक्षर हटाउनुहोस्। 
+        जवाफ मात्र JSON Array मा दिनुहोस्।\n\nINPUT:\n${JSON.stringify(rawData)}`;
+        
         const result = await model.generateContent(prompt);
-        return JSON.parse(result.response.text().replace(/```json|```/g, '').trim());
+        let text = result.response.text().replace(/```json|```/g, '').trim();
+        return JSON.parse(text);
     } catch (e) { return null; }
 }
 
 app.get('/api/rasifal', async (req, res) => {
-    let data = await fetchRasifal();
-    if (data.length === 0) return res.json({ error: "सबै स्रोतहरूबाट डाटा ब्लक भयो" });
+    let data = await fetchWithRetry();
+    
+    if (data.length === 0) {
+        return res.json({ error: "वेबसाइटले अझै ब्लक गरिरहेको छ। कृपया १ मिनेट पछि फेरि प्रयास गर्नुहोस्।" });
+    }
 
-    let aiData = await cleanWithAI(data);
-    res.json({ data: aiData || data });
+    let finalData = await cleanWithAI(data);
+    res.json({ data: finalData || data });
 });
 
 app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
