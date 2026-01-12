@@ -3,14 +3,15 @@ const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
-// Render को लागि पोर्ट १०००० सेट गरिएको छ
+// Render को पोर्ट १०००० सेट गरिएको छ
 const PORT = process.env.PORT || 10000; 
 
 // १. Render बाट 'Dynamic' मोडल र साँचो तान्ने
+// ध्यान दिनुहोस्: Render मा KEY को नाम 'GROQ_API_KEY' हुनुपर्छ
 const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-70b-versatile"; 
 
-// २. स्ट्याटिक ब्याकअप डाटा (यो कहिल्यै फेल हुँदैन)
+// २. स्ट्याटिक ब्याकअप डाटा (एआई फेल भएको खण्डमा यो सुरक्षित रूपमा जान्छ)
 const backupRasifal = [
     {"sign":"मेष","prediction":"आज नयाँ कामको थालनी गर्ने राम्रो समय छ। आत्मविश्वास बढ्नेछ।"},
     {"sign":"वृष","prediction":"धन र परिवारको क्षेत्रमा लाभ मिल्नेछ। बोलीमा मिठास ल्याउनुहोला।"},
@@ -28,16 +29,16 @@ const backupRasifal = [
 
 app.get('/api/rasifal', async (req, res) => {
     try {
-        console.log(`🤖 Groq AI (${GROQ_MODEL}) प्रयोग गर्दै...`);
+        console.log(`🤖 Groq AI (${GROQ_MODEL}) लाई अनुरोध पठाइँदैछ...`);
         
-        // ३. Groq API लाई अनुरोध (400 Error हटाउन ढाँचा परिवर्तन गरिएको)
+        // ३. Groq API अनुरोध (JSON संरचनामा सुधार गरिएको)
         const response = await axios.post(
             'https://api.groq.com/openai/v1/chat/completions',
             {
-                model: GROQ_MODEL, 
+                model: GROQ_MODEL,
                 messages: [{
                     role: "user",
-                    content: "आजको १२ राशिको राशिफल एकदम सरल नेपालीमा लेख्नुहोस्। जवाफ अनिवार्य रूपमा यो JSON ढाँचामा दिनुहोस्: { \"data\": [ {\"sign\": \"मेष\", \"prediction\": \"...\"}, ... ] }"
+                    content: "आजको १२ राशिको राशिफल सरल नेपालीमा लेख्नुहोस्। जवाफ अनिवार्य रूपमा यो JSON ढाँचामा हुनुपर्छ: { \"data\": [ {\"sign\": \"मेष\", \"prediction\": \"...\"}, ... ] }"
                 }],
                 response_format: { type: "json_object" }
             },
@@ -46,11 +47,11 @@ app.get('/api/rasifal', async (req, res) => {
                     'Authorization': `Bearer ${GROQ_API_KEY}`,
                     'Content-Type': 'application/json'
                 },
-                timeout: 12000 // १२ सेकेन्डको टाइमआउट
+                timeout: 15000 
             }
         );
 
-        // ४. प्राप्त डेटा निकाल्ने
+        // ४. एआईको उत्तरलाई JSON मा बदल्ने
         const aiResponse = JSON.parse(response.data.choices[0].message.content);
         const finalData = aiResponse.data || aiResponse.rasifal || aiResponse;
 
@@ -62,8 +63,8 @@ app.get('/api/rasifal', async (req, res) => {
         });
 
     } catch (e) {
-        // ५. एआई फेल भयो भने 'Fallback' - एप कहिल्यै रोकिँदैन
-        console.error("⚠️ AI Failed! Using Static Fallback:", e.message);
+        // ५. एआई फेल भयो भने 'Fallback': ब्याकअप डाटा पठाउने
+        console.error("⚠️ AI Failed! Error Code:", e.response ? e.response.status : e.message);
         
         res.json({
             status: "SUCCESS",
@@ -74,6 +75,6 @@ app.get('/api/rasifal', async (req, res) => {
     }
 });
 
-app.get('/', (req, res) => res.send('Static Hybrid AI Rasifal Server is Online! 🚀'));
+app.get('/', (req, res) => res.send('AI Rasifal Server is Online and Secure! 🚀'));
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
