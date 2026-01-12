@@ -1,193 +1,88 @@
-/**
- * AI Rasifal Server
- * Stable + Fallback + Cache Enabled
- */
-
 const express = require('express');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+// Render को लागि पोर्ट १०००० सेट गरिएको छ
+const PORT = process.env.PORT || 10000; 
 
-// =====================
-// Gemini Setup (SAFE)
-// =====================
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
+// १. Render बाट 'Dynamic' मोडल र साँचो तान्ने
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-70b-versatile"; 
 
-if (!GEMINI_API_KEY) {
-  console.error("❌ GEMINI_API_KEY missing");
-  process.exit(1);
-}
+// २. स्ट्याटिक ब्याकअप डाटा (तपाईँको योजना अनुसार)
+// एआई फेल भयो भने यो डाटा सिधै जान्छ, जसले गर्दा एपमा एरर आउँदैन।
+const backupRasifal = [
+    {"sign":"मेष","prediction":"आज नयाँ कामको थालनी गर्ने राम्रो समय छ। आत्मविश्वास बढ्नेछ।"},
+    {"sign":"वृष","prediction":"धन र परिवारको क्षेत्रमा लाभ मिल्नेछ। बोलीमा मिठास ल्याउनुहोला।"},
+    {"sign":"मिथुन","prediction":"लामो समयदेखि रोकिएका कामहरू बन्नेछन्। साथीको सहयोग मिल्नेछ।"},
+    {"sign":"कर्कट","prediction":"स्वास्थ्यमा अलि बढी ध्यान दिनुहोला। अनावश्यक खर्च बढ्न सक्छ।"},
+    {"sign":"सिंह","prediction":"मान-सम्मान र प्रतिष्ठामा वृद्धि हुनेछ। सामाजिक काममा रुचि बढ्नेछ।"},
+    {"sign":"कन्या","prediction":"अध्ययन अध्यापनमा सफलता मिल्नेछ। वैदेशिक कार्य अघि बढ्नेछ।"},
+    {"sign":"तुला","prediction":"आर्थिक लाभको योग छ। नयाँ सम्बन्धहरू सुमधुर हुनेछन्।"},
+    {"sign":"वृश्चिक","prediction":"काममा ढिलासुस्ती हुन सक्छ, धैर्य राख्नुहोला। शत्रु परास्त हुनेछन्।"},
+    {"sign":"धनु","prediction":"यात्राको योजना बन्नेछ। धार्मिक कार्यमा मन जानेछ।"},
+    {"sign":"मकर","prediction":"रोकिएका पुराना कामहरू सुल्झिनेछन्। घरमा रमाइलो वातावरण रहनेछ।"},
+    {"sign":"कुम्भ","prediction":"नयाँ अवसरहरू हात लाग्नेछन्। व्यापार व्यवसायमा राम्रो प्रगति हुनेछ।"},
+    {"sign":"मीन","prediction":"मानसिक शान्ति मिल्नेछ। परोपकारी काममा सहभागी भइनेछ।"}
+];
 
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-// =====================
-// Cache (Daily)
-// =====================
-let rasifalCache = {
-  date: "",
-  data: null,
-  source: ""
-};
-
-// =====================
-// Helpers
-// =====================
-function todayKey() {
-  return new Date().toISOString().split("T")[0];
-}
-
-// =====================
-// Ekantipur Fallback
-// =====================
-async function fetchFromEkantipur() {
-  console.log("📰 Fallback: Ekantipur बाट राशिफल तान्दै...");
-  const url = "https://ekantipur.com/horoscope";
-
-  const res = await axios.get(url, {
-    timeout: 15000,
-    headers: {
-      "User-Agent": "Mozilla/5.0"
-    }
-  });
-
-  const $ = cheerio.load(res.data);
-  let results = [];
-
-  const signs = [
-    "मेष","वृष","मिथुन","कर्कट","सिंह","कन्या",
-    "तुला","वृश्चिक","धनु","मकर","कुम्भ","मीन"
-  ];
-
-  $('div').each((_, el) => {
-    const text = $(el).text().trim();
-    signs.forEach(sign => {
-      if (text.startsWith(sign) && text.length > 40) {
-        results.push({
-          sign,
-          prediction: text.replace(sign, '').trim()
-        });
-      }
-    });
-  });
-
-  return results.slice(0, 12);
-}
-
-// =====================
-// AI Generator
-// =====================
-async function generateWithAI() {
-  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
-
-  const prompt = `
-तपाईं एक अनुभवी नेपाली ज्योतिषी हुनुहुन्छ।
-आजको मिति ${todayKey()} को लागि १२ वटै राशिको दैनिक राशिफल लेख्नुहोस्।
-
-Rules:
-- भाषा: सरल, सकारात्मक नेपाली
-- "चु, चे, चो" आदि नलेख्नुहोस्
-- शुभ रंग / शुभ अंक नलेख्नुहोस्
-- ठीक १२ वटा राशिहरू हुनुपर्छ
-- Output ONLY valid JSON Array हुनुपर्छ
-
-Format:
-[
- {"sign":"मेष","prediction":"..."},
- ...
-]
-`;
-
-  const result = await Promise.race([
-    model.generateContent(prompt),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("AI_TIMEOUT")), 15000)
-    )
-  ]);
-
-  const text = result.response.text()
-    .replace(/```json|```/g, '')
-    .trim();
-
-  return JSON.parse(text);
-}
-
-// =====================
-// API Route
-// =====================
 app.get('/api/rasifal', async (req, res) => {
-  try {
-    const today = todayKey();
-
-    // Serve cache
-    if (rasifalCache.date === today && rasifalCache.data) {
-      console.log("⚡ Cache hit");
-      return res.json({
-        status: "SUCCESS",
-        source: rasifalCache.source,
-        updatedAt: rasifalCache.date,
-        data: rasifalCache.data
-      });
-    }
-
-    console.log("🤖 Gemini AI बाट नयाँ राशिफल...");
-
-    let data;
-    let source = "GEMINI_AI";
-
     try {
-      data = await generateWithAI();
-    } catch (aiErr) {
-      console.error("⚠️ AI Failed:", aiErr.message);
-      data = await fetchFromEkantipur();
-      source = "EKANTIPUR_FALLBACK";
+        console.log(`🤖 Groq AI (${GROQ_MODEL}) प्रयोग गरेर १२ राशिको राशिफल तयार पारिँदैछ...`);
+        
+        // ३. Groq API मार्फत डेटा तान्ने (१००% फ्री)
+        const response = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+                model: GROQ_MODEL, 
+                messages: [{
+                    role: "user",
+                    content: `तपाईं एक अनुभवी ज्योतिषी हुनुहुन्छ। आजको मितिको लागि मेष देखि मीन सम्मका १२ वटै राशिको दैनिक राशिफल एकदम सरल नेपाली भाषामा लेख्नुहोस्।
+                    - जवाफ केवल JSON Array मा हुनुपर्छ: [{"sign": "मेष", "prediction": "..."}, ...]
+                    - १२ वटै राशि अनिवार्य हुनुपर्छ।
+                    - कुनै पनि अतिरिक्त टेक्स्ट वा ब्र्याकेट नराख्नुहोस्।`
+                }],
+                // एआईलाई सिधै JSON मात्र दिन बाध्य पार्ने सेटिङ
+                response_format: { type: "json_object" }
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${GROQ_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000 // १० सेकेन्डको टाइमआउट
+            }
+        );
+
+        // ४. प्राप्त डेटालाई प्रोसेस गर्ने
+        let content = response.data.choices[0].message.content;
+        let aiData = JSON.parse(content);
+
+        // एआईले कुन 'Key' मा डेटा राख्यो भनेर चेक गर्ने
+        const finalData = Array.isArray(aiData) ? aiData : (aiData.horoscopes || aiData.data || aiData.rasifal || Object.values(aiData)[0]);
+
+        res.json({
+            status: "SUCCESS",
+            source: "GROQ_FREE_AI",
+            updatedAt: new Date().toISOString().split('T')[0],
+            data: finalData
+        });
+
+    } catch (e) {
+        console.error("⚠️ AI Failed! Error:", e.message);
+        
+        // ५. एआई फेल भयो भने 'Fallback': स्ट्याटिक ब्याकअप डेटा पठाउने
+        res.json({
+            status: "SUCCESS",
+            source: "STATIC_BACKUP_SAFE_MODE",
+            updatedAt: new Date().toISOString().split('T')[0],
+            data: backupRasifal
+        });
     }
-
-    if (!data || data.length < 12) {
-      throw new Error("Incomplete Rasifal Data");
-    }
-
-    rasifalCache = {
-      date: today,
-      data,
-      source
-    };
-
-    res.json({
-      status: "SUCCESS",
-      source,
-      updatedAt: today,
-      data
-    });
-
-  } catch (e) {
-    console.error("❌ Final Error:", e.message);
-
-    if (rasifalCache.data) {
-      return res.json({
-        status: "OFFLINE_SUCCESS",
-        source: "LAST_CACHE",
-        updatedAt: rasifalCache.date,
-        data: rasifalCache.data
-      });
-    }
-
-    res.status(500).json({
-      status: "ERROR",
-      message: "राशिफल अपडेट गर्न सकिएन"
-    });
-  }
 });
 
-// =====================
-app.get('/', (_, res) =>
-  res.send('✅ AI Rasifal Server is Online')
-);
+// होमपेज
+app.get('/', (req, res) => res.send('Static Hybrid AI Rasifal Server is Online! 🚀'));
 
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
