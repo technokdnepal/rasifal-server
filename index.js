@@ -5,92 +5,115 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama3-8b-8192";
+// ================= CONFIG =================
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-70b-versatile";
 
-// Safe static backup (never fails)
+// Startup diagnostics
+console.log("🔑 GROQ_API_KEY present:", GROQ_API_KEY ? "YES" : "NO");
+console.log("🧠 GROQ_MODEL:", GROQ_MODEL);
+
+// ================= STATIC BACKUP =================
 const backupRasifal = [
-  { sign: "मेष", prediction: "आज आत्मविश्वास बढ्नेछ। नयाँ काम सुरु गर्न राम्रो दिन हो।" },
-  { sign: "वृष", prediction: "धन र परिवार पक्ष बलियो रहनेछ। संयमित व्यवहार लाभदायक हुनेछ।" },
-  { sign: "मिथुन", prediction: "सम्पर्क र कुराकानीबाट फाइदा हुनेछ। रोकिएका काम बन्नेछन्।" },
-  { sign: "कर्कट", prediction: "स्वास्थ्यमा ध्यान दिनुहोस्। अनावश्यक तनावबाट टाढा रहनुहोस्।" },
-  { sign: "सिंह", prediction: "मान-सम्मान बढ्ने दिन छ। नेतृत्वदायी काममा सफलता मिल्नेछ।" },
-  { sign: "कन्या", prediction: "धैर्य र योजना अनुसार काम गर्दा राम्रो नतिजा मिल्नेछ।" },
-  { sign: "तुला", prediction: "आर्थिक पक्ष मजबुत हुनेछ। नयाँ अवसरहरू देखिनेछन्।" },
-  { sign: "वृश्चिक", prediction: "निर्णय सोचेर लिनुहोला। भावनामा बग्न नदिनुहोस्।" },
-  { sign: "धनु", prediction: "यात्रा र अध्ययनमा लाभ मिल्ने संकेत छ।" },
-  { sign: "मकर", prediction: "पुराना कामहरू पूरा हुनेछन्। जिम्मेवारी बढ्न सक्छ।" },
-  { sign: "कुम्भ", prediction: "नयाँ योजना सफल हुने संकेत छ। मित्र सहयोग मिल्नेछ।" },
-  { sign: "मीन", prediction: "मानसिक शान्ति मिल्नेछ। धार्मिक वा सकारात्मक काममा मन जानेछ।" }
+  { "sign": "मेष", "prediction": "आज नयाँ कामको थालनी गर्ने राम्रो समय छ।" },
+  { "sign": "वृष", "prediction": "धन र परिवारको क्षेत्रमा लाभ मिल्नेछ।" },
+  { "sign": "मिथुन", "prediction": "रोकिएका कामहरू बन्नेछन्।" },
+  { "sign": "कर्कट", "prediction": "स्वास्थ्यमा ध्यान दिनु उपयुक्त हुन्छ।" },
+  { "sign": "सिंह", "prediction": "काममा प्रशंसा मिल्नेछ।" },
+  { "sign": "कन्या", "prediction": "धैर्य राख्दा राम्रो नतिजा आउँछ।" },
+  { "sign": "तुला", "prediction": "आर्थिक पक्ष मजबुत हुनेछ।" },
+  { "sign": "वृश्चिक", "prediction": "निर्णय सोचेर लिनुहोस्।" },
+  { "sign": "धनु", "prediction": "यात्राको योग देखिन्छ।" },
+  { "sign": "मकर", "prediction": "पुराना काम पूरा हुनेछन्।" },
+  { "sign": "कुम्भ", "prediction": "नयाँ अवसरहरू देखा पर्नेछन्।" },
+  { "sign": "मीन", "prediction": "मानसिक शान्ति मिल्नेछ।" }
 ];
 
+// ================= ROUTE =================
 app.get('/api/rasifal', async (req, res) => {
+  // यदि key नै छैन भने AI call नगर्ने
+  if (!GROQ_API_KEY) {
+    console.warn("⚠️ GROQ_API_KEY missing → Static fallback used");
+    return res.json({
+      status: "SUCCESS",
+      source: "STATIC_NO_API_KEY",
+      data: backupRasifal
+    });
+  }
+
   try {
-    console.log(`🤖 Groq AI (${GROQ_MODEL}) call गर्दै...`);
+    console.log(`🤖 Calling Groq AI (${GROQ_MODEL})...`);
 
     const response = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
+      'https://api.groq.com/openai/v1/chat/completions',
       {
         model: GROQ_MODEL,
         messages: [
           {
             role: "user",
+            // 🔴 JSON शब्द अनिवार्य रूपमा राखिएको
             content:
-              "आजको १२ राशिको दैनिक राशिफल सरल र सकारात्मक नेपालीमा लेख्नुहोस्। " +
-              "प्रत्येक राशिको नाम (मेष, वृष...) र १–२ लाइन भविष्यवाणी दिनुहोस्।"
+              "Write today's 12 zodiac horoscopes in simple Nepali language. " +
+              "The output MUST be valid JSON. " +
+              "Return a JSON object exactly in this format: " +
+              "{ \"data\": [ { \"sign\": \"मेष\", \"prediction\": \"...\" } ] }"
           }
         ],
-        temperature: 0.7,
-        max_tokens: 600
+        response_format: { type: "json_object" }
       },
       {
         headers: {
           Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json"
+          'Content-Type': 'application/json'
         },
         timeout: 15000
       }
     );
 
-    const text = response.data.choices[0].message.content;
+    const rawContent = response.data?.choices?.[0]?.message?.content;
+    if (!rawContent) {
+      throw new Error("Empty AI response content");
+    }
 
-    // Simple text → structured format
-    const signs = [
-      "मेष","वृष","मिथुन","कर्कट","सिंह","कन्या",
-      "तुला","वृश्चिक","धनु","मकर","कुम्भ","मीन"
-    ];
+    let parsed;
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch (jsonErr) {
+      console.error("❌ JSON parse failed. Raw content:", rawContent);
+      throw jsonErr;
+    }
 
-    let result = [];
-    signs.forEach(sign => {
-      const regex = new RegExp(`${sign}[\\s:-]*(.*)`);
-      const match = text.match(regex);
-      if (match) {
-        result.push({ sign, prediction: match[1].trim() });
-      }
-    });
-
-    if (result.length < 12) throw new Error("Incomplete AI data");
-
-    res.json({
+    return res.json({
       status: "SUCCESS",
       source: "GROQ_AI",
-      updatedAt: new Date().toISOString().split("T")[0],
-      data: result
+      data: parsed.data || parsed
     });
 
   } catch (e) {
-    console.error("⚠️ AI Failed! Using Static Backup:", e.message);
-    res.json({
+    // 🔍 REAL ERROR DETAIL
+    if (e.response && e.response.data) {
+      console.error(
+        "❌ Groq API Error Detail:",
+        JSON.stringify(e.response.data, null, 2)
+      );
+    } else {
+      console.error("⚠️ AI Request Failed:", e.message);
+    }
+
+    return res.json({
       status: "SUCCESS",
       source: "STATIC_BACKUP_SAFE_MODE",
-      updatedAt: new Date().toISOString().split("T")[0],
       data: backupRasifal
     });
   }
 });
 
-app.get('/', (_, res) => res.send("Rasifal Server Online ✅"));
+// ================= ROOT =================
+app.get('/', (req, res) => {
+  res.send('✅ Rasifal Server is running (Stable Mode)');
+});
 
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+// ================= START =================
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
