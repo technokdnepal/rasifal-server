@@ -43,23 +43,22 @@ app.get('/api/rasifal', async (req, res) => {
   try {
     console.log(`🤖 Calling Groq AI (${GROQ_MODEL})...`);
 
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: GROQ_MODEL,
-        messages: [
-          {
-            role: "user",
-            // 🔴 JSON शब्द अनिवार्य रूपमा राखिएको
-            content: "तपाईं एक प्रोफेसनल नेपाली ज्योतिषी हुनुहुन्छ। " +
-         "आजको १२ राशिको राशिफल एकदमै शुद्ध, सरल नेपालीमा लेख्नुहोस्। " +
-         "हिन्दी शब्द (जस्तै: रिस्ता, चिन्ता) प्रयोग नगर्नुहोस्। " +
-         "राशिको नामहरू (मेष, वृष, मिथुन, कर्कट, सिंह, कन्या, तुला, वृश्चिक, धनु, मकर, कुम्भ, मीन) शुद्ध लेख्नुहोस्। " +
-         "जवाफ केवल JSON ढाँचामा दिनुहोस्: { \"data\": [ { \"sign\": \"...\", \"prediction\": \"...\" } ] }"
-          }
-        ],
-        response_format: { type: "json_object" }
-      },
+    cconst response = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+                model: GROQ_MODEL,
+                messages: [{
+                    role: "user",
+                    // यहाँ निर नयाँ निर्देशन थप्ने 👇
+                    content: "Write today's 12 zodiac horoscopes in simple and pure Nepali language. " +
+                             "Avoid literal translations and don't use weird phrases. Use standard, natural Nepali sentences that a human astrologer would write. " +
+                             "Ensure no Hindi words are used. Use correct names like 'कर्कट' and 'वृष'. " +
+                             "The output MUST be valid JSON. " +
+                             "Return a JSON object exactly in this format: " +
+                             "{ \"data\": [ { \"sign\": \"मेष\", \"prediction\": \"...\" } ] }"
+                }],
+                response_format: { type: "json_object" }
+            },
       {
         headers: {
           Authorization: `Bearer ${GROQ_API_KEY}`,
