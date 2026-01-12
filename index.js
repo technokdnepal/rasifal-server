@@ -52,9 +52,12 @@ app.get('/api/rasifal', async (req, res) => {
           {
             role: "user",
             // 🔴 JSON शब्द अनिवार्य रूपमा राखिएको
-            content: "You are a professional Nepali Astrologer. Write today's daily horoscope for exactly these 12 signs: मेष, वृष, मिथुन, कर्कट, सिंह, कन्या, तुला, वृश्चिक, धनु, मकर, कुम्भ, मीन. " +
-         "Rules: 1. Use pure and natural Nepali. 2. DO NOT use English words. 3. DO NOT confuse 'Dasha' with 'Dashain'. 4. Ensure all 12 signs are present. " +
-         "Output format: { \"data\": [ { \"sign\": \"...\", \"prediction\": \"...\" } ] }"
+            content:
+              "Write today's daily horoscope for exactly these 12 signs: मेष, वृष, मिथुन, कर्कट, सिंह, कन्या, तुला, वृश्चिक, धनु, मकर, कुम्भ, मीन. " +
+              "Rules: 1. Use pure and natural Nepali. 2. DO NOT use English words. 3. DO NOT confuse 'Dasha' with 'Dashain'. 4. Ensure all 12 signs are present. " +
+              "The output MUST be valid JSON. " +
+              "Return a JSON object exactly in this format: " +
+              "{ \"data\": [ { \"sign\": \"मेष\", \"prediction\": \"...\" } ] }"
           }
         ],
         response_format: { type: "json_object" }
