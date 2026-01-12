@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 10000;
 
 // १. सेटअप: एआई साँचो र मोडल सेटिङ
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash"; 
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash-latest";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // २. क्यास (Cache): एआई फेल भयो भने हिजोकै डेटा देखाउन
