@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-// २. कुञ्जीहरू लोड गर्ने
+// २. Environment Variables
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -22,10 +22,10 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 let rasifalCache = { 
     date: null, 
     data: [], 
-    source: "प्रतीक्षा गरिँदै..." 
+    source: "Waiting for update..." 
 };
 
-// ३. हाम्रो पात्रोबाट डेटा तान्ने
+// ३. हाम्रो पात्रोबाट नेपाली डेटा तान्ने
 async function getRawData() {
     try {
         const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
@@ -43,52 +43,45 @@ async function getRawData() {
     }
 }
 
-// ४. मुख्य एआई कार्यविधि
+// ४. अङ्ग्रेजीमा राशिफल तयार गर्ने मुख्य फङ्सन
 async function updateRasifal() {
-    console.log("⏳ नयाँ राशिफल तयार हुँदैछ...");
+    console.log("⏳ अङ्ग्रेजीमा उच्च गुणस्तरको राशिफल तयार हुँदैछ...");
     const rawData = await getRawData();
     if (!rawData) return false;
 
-    // एआईलाई कडा र स्पष्ट निर्देशन
-    const prompt = `You are a professional astrologer for technokd.com.
-    TASK: Write a 6-sentence detailed daily horoscope for each of the 12 zodiac signs based on the provided data.
+    // एआईलाई अङ्ग्रेजीमा लेख्न दिइएको कडा निर्देशन
+    const prompt = `You are a professional English Astrologer for 'technokd.com'.
+    TASK: Translate the following Nepali horoscope data into detailed, high-quality English.
     
     STRICT RULES:
-    1. Write exactly 6 sentences for each sign.
-    2. Use pure, natural Nepali language only. No nonsense words like 'किर्ण' or 'छालो'.
-    3. Do NOT repeat the signs or append extra text after the JSON.
-    4. Provide the result ONLY in this JSON format: { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
+    1. Sentence Count: Write exactly 5 to 6 meaningful sentences for each zodiac sign.
+    2. Tone: Professional, clear, and empathetic.
+    3. Accuracy: Ensure the 100% correct meaning is preserved from the source.
+    4. Format: Return the result strictly in this JSON format:
+       { "data": [ {"sign": "Aries", "prediction": "..."}, ... ] }
     
-    SOURCE DATA:
+    SOURCE NEPALI DATA:
     ${rawData}`;
 
-    // ५. पहिले Gemini प्रयास (v1 Endpoint)
+    // ५. Gemini प्रयास (English output का लागि)
     try {
-        console.log(`🚀 Gemini (${GEMINI_MODEL}) बाट प्रयास गर्दै...`);
-        // यहाँ हामीले v1beta को सट्टा v1 प्रयोग गरेका छौँ र responseMimeType लाई CamelCase मा राखेका छौँ
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-        
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
         const response = await axios.post(geminiUrl, {
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { 
-                responseMimeType: "application/json" 
-            }
+            generationConfig: { responseMimeType: "application/json" }
         });
 
         const output = JSON.parse(response.data.candidates[0].content.parts[0].text);
         if (output.data && output.data.length === 12) {
             rasifalCache.data = output.data;
             rasifalCache.date = new Date().toLocaleDateString('en-CA');
-            rasifalCache.source = "Google Gemini 1.5 Flash";
-            console.log("✅ सफल: जेमिनाईले उत्कृष्ट डेटा तयार गर्यो।");
+            rasifalCache.source = "Google Gemini (High Quality English)";
+            console.log("✅ सफल: जेमिनाईले अङ्ग्रेजी राशिफल तयार गर्यो।");
             return true;
         }
     } catch (e) {
-        // जेमिनाई फेल हुँदाको वास्तविक एरर हेर्न यो लग अति आवश्यक छ
-        console.error("❌ Gemini Error Details:", e.response ? JSON.stringify(e.response.data) : e.message);
-        
-        // ६. Fallback to Groq Llama
-        console.log("🔄 अब Groq (Llama) बाट काम चलाउँदै...");
+        // ६. Fallback to Groq Llama (अङ्ग्रेजीका लागि यो निकै भरपर्दो छ)
+        console.warn("🔄 Gemini फेल भयो, अब Groq (Llama) बाट अङ्ग्रेजीमा डेटा निकाल्दै...");
         try {
             const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                 model: GROQ_MODEL,
@@ -99,11 +92,11 @@ async function updateRasifal() {
             const outputJSON = JSON.parse(groqRes.data.choices[0].message.content);
             rasifalCache.data = outputJSON.data;
             rasifalCache.date = new Date().toLocaleDateString('en-CA');
-            rasifalCache.source = "Groq Llama (Fallback Mode)";
-            console.log("✅ सफल: लामाले ब्याकअप डेटा तयार गर्यो।");
+            rasifalCache.source = "Groq Llama (English Back-up)";
+            console.log("✅ सफल: लामाले अङ्ग्रेजीमा ब्याकअप डेटा तयार गर्यो।");
             return true;
         } catch (err) {
-            console.error("❌ दुवै एआई इन्जिन फेल भए।");
+            console.error("❌ दुवै एआई फेल भए।");
             return false;
         }
     }
@@ -123,11 +116,6 @@ app.get('/api/rasifal', async (req, res) => {
         engine: rasifalCache.source,
         data: rasifalCache.data
     });
-});
-
-app.get('/api/rasifal/force-update', async (req, res) => {
-    const success = await updateRasifal();
-    res.json({ status: success ? "SUCCESS" : "ERROR", engine: rasifalCache.source });
 });
 
 app.listen(PORT, () => {
