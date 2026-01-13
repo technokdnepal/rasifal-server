@@ -1,181 +1,111 @@
-const express = require("express");
-const axios = require("axios");
-const fs = require("fs");
-require("dotenv").config();
+const express = require('express');
+const axios = require('axios');
+const cheerio = require('cheerio');
+const cron = require('node-cron');
+require('dotenv').config();
+
+process.env.TZ = 'Asia/Kathmandu';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = "llama-3.1-8b-instant";
-const DATA_FILE = "./rasifal.json";
+const GROQ_MODEL = 'llama-3.1-8b-instant'; // तपाईँले रोज्नुभएको स्थिर मोडल
 
-/* ---------- Utils ---------- */
-
-const RASHI_MAP = {
-  Aries: "मेष",
-  Taurus: "वृष",
-  Gemini: "मिथुन",
-  Cancer: "कर्कट",
-  Leo: "सिंह",
-  Virgo: "कन्या",
-  Libra: "तुला",
-  Scorpio: "वृश्चिक",
-  Sagittarius: "धनु",
-  Capricorn: "मकर",
-  Aquarius: "कुम्भ",
-  Pisces: "मीन"
+let rasifalCache = { 
+    date: null, 
+    data: [], 
+    source: "Hamro Patro + Nepali Patro (AI Unique Mode)" 
 };
 
-function isToday(data) {
-  if (!data?.generatedAt) return false;
-  return data.generatedAt.slice(0, 10) === new Date().toISOString().slice(0, 10);
+// राशिको नाम म्यापिङ (कन्फ्युजन हटाउन)
+const zodiacMapping = "Aries: मेष, Taurus: वृष, Gemini: मिथुन, Cancer: कर्कट, Leo: सिंह, Virgo: कन्या, Libra: तुला, Scorpio: वृश्चिक, Sagittarius: धनु, Capricorn: मकर, Aquarius: कुम्भ, Pisces: मीन";
+
+async function getRawData() {
+    let combinedContent = "";
+    try {
+        const [res1, res2] = await Promise.allSettled([
+            axios.get('https://www.hamropatro.com/rashifal', { timeout: 10000 }),
+            axios.get('https://www.nepalipatro.com.np/rashifal', { timeout: 10000 })
+        ]);
+        if (res1.status === 'fulfilled') {
+            const $ = cheerio.load(res1.value.data);
+            $('.item').each((i, el) => { combinedContent += $(el).find('.title').text() + ": " + $(el).find('.desc').text() + "\n"; });
+        }
+        if (res2.status === 'fulfilled') {
+            const $ = cheerio.load(res2.value.data);
+            $('.rashifal-item').each((i, el) => { combinedContent += $(el).find('h3').text() + ": " + $(el).find('p').text() + "\n"; });
+        }
+    } catch (e) { console.error("Scraping Error:", e.message); }
+    return combinedContent;
 }
 
-function containsRoman(text) {
-  return /[a-zA-Z]/.test(text);
+async function updateRasifal() {
+    console.log("⏳ अङ्ग्रेजी ड्राफ्ट र नेपाली अनुवाद प्रक्रिया सुरु भयो...");
+    const rawData = await getRawData();
+    if (!rawData || rawData.length < 100) return false;
+
+    // तपाईँको नयाँ आइडिया अनुसारको प्रम्प्ट
+    const prompt = `
+    You are a Professional Astrologer and Translator.
+    
+    STEP 1: Analyze the raw Nepali horoscope data provided below.
+    STEP 2: Write a unique, creative, and professional version of all 12 horoscopes in ENGLISH first (this prevents copying).
+    STEP 3: Translate that English version into high-quality, Traditional Nepali (ट्रेडिसनल नेपाली).
+    
+    STRICT RULES:
+    1. Do NOT use Romanized Nepali (e.g., 'Aaja ko din' is bad). Use 'आजको दिन' (Traditional).
+    2. Use this mapping for Zodiac Signs: ${zodiacMapping}.
+    3. Ensure 100% correct grammar and spelling.
+    4. Each horoscope must be original and not a word-for-word copy of the source.
+    
+    JSON OUTPUT FORMAT:
+    { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
+
+    SOURCE DATA:
+    ${rawData}
+    `;
+
+    try {
+        const response = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+                model: GROQ_MODEL,
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: "json_object" },
+                temperature: 0.7 
+            },
+            { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } }
+        );
+
+        const aiOutput = JSON.parse(response.data.choices[0].message.content);
+        if (aiOutput.data && aiOutput.data.length > 0) {
+            rasifalCache.data = aiOutput.data;
+            rasifalCache.date = new Date().toISOString().split('T')[0];
+            console.log("✅ अङ्ग्रेजी-टू-नेपाली राशिफल सफलतापूर्वक तयार भयो।");
+            return true;
+        }
+    } catch (e) { 
+        console.error("AI Update Error:", e.message);
+        return false; 
+    }
 }
 
-/* ---------- Groq Call ---------- */
+cron.schedule('10 0 * * *', updateRasifal);
 
-async function groq(messages) {
-  const res = await axios.post(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      model: GROQ_MODEL,
-      messages,
-      temperature: 0.2
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json"
-      }
-    }
-  );
-  return res.data.choices[0].message.content;
-}
-
-/* ---------- Generator ---------- */
-
-async function generateRasifal() {
-  console.log("🧠 Generating English base...");
-
-  const english = await groq([
-    {
-तिमी एक नेपाली ज्योतिष लेखक हौ।
-
-काम:
-आजको १२ राशिको दैनिक राशिफल लेख।
-
-महत्वपूर्ण नियम:
-1. भाषा Hamro Patro र Nepali Patro जस्तै हुनुपर्छ
-2. वाक्य छोटा र सरल हुनुपर्छ
-3. कुनै पनि आदेशात्मक शब्द प्रयोग नगर्नु
-   (जस्तै: गर्नुहोस्, तयार रहनुहोस्, प्रयास गर्नुहोस् ❌)
-4. अनुमानात्मक शैली प्रयोग गर्नु:
-   - हुन सक्छ
-   - देखिन्छ
-   - मिल्नेछ
-   - रहनेछ
-5. दोहोरिने शब्द प्रयोग नगर्नु
-6. अत्यधिक गह्रौँ संस्कृत शब्द प्रयोग नगर्नु
-7. सबै वाक्य शुद्ध देवनागरी नेपालीमा हुनुपर्छ
-8. राशिको नामपछि ":" प्रयोग गर्नु (मेष: ...)
-9. प्रत्येक राशिमा 1–2 वाक्य मात्र
-
-Source style reference:
-- Hamro Patro
-- Nepali Patro
-
-नोट:
-तिमीले तिनको शब्द copy गर्नु हुँदैन,
-तर लेख्ने शैली, भाषा र भाव मिल्नुपर्छ।
-
-Output format (JSON मात्र):
-{
-  "data": [
-    { "sign": "मेष", "prediction": "..." }
-  ]
-}
-`
-    }
-  ]);
-
-  const eng = JSON.parse(english);
-
-  console.log("🇳🇵 Rewriting into PURE Nepali...");
-
-  const nepaliRaw = await groq([
-    {
-      role: "user",
-      content: `
-Rewrite the following horoscope into PURE, SHUDDHA NEPALI.
-
-STRICT RULES:
-- Use ONLY Devanagari (नेपाली अक्षर)
-- NO Roman letters
-- NO Hindi/Urdu words (par, tum, achha, garnu, etc.)
-- Simple Nepali everyone understands
-- Newspaper horoscope style
-- Short sentences
-- If Roman letter appears, response is INVALID
-
-Return SAME JSON structure only.
-
-JSON:
-${JSON.stringify(eng)}
-`
-    }
-  ]);
-
-  const nep = JSON.parse(nepaliRaw);
-
-  // Validation
-  nep.data.forEach(r => {
-    if (containsRoman(r.prediction)) {
-      throw new Error("Roman text detected, retry needed");
-    }
-  });
-
-  const finalData = {
-    generatedAt: new Date().toISOString(),
-    source: "GROQ_STRICT_NEPALI",
-    data: nep.data.map(r => ({
-      sign: RASHI_MAP[r.sign] || r.sign,
-      prediction: r.prediction
-    }))
-  };
-
-  fs.writeFileSync(DATA_FILE, JSON.stringify(finalData, null, 2));
-  console.log("✅ Clean Nepali rasifal saved");
-
-  return finalData;
-}
-
-/* ---------- API ---------- */
-
-app.get("/api/rasifal", async (req, res) => {
-  try {
-    let data = fs.existsSync(DATA_FILE)
-      ? JSON.parse(fs.readFileSync(DATA_FILE))
-      : null;
-
-    if (!isToday(data)) {
-      data = await generateRasifal();
-    }
-
-    res.json({ status: "SUCCESS", ...data });
-
-  } catch (e) {
-    console.error("❌ Error:", e.message);
+app.get('/api/rasifal', async (req, res) => {
+    if (!rasifalCache.data || rasifalCache.data.length === 0) await updateRasifal();
     res.json({
-      status: "ERROR",
-      message: "राशिफल तयार गर्न सकिएन"
+        status: "SUCCESS",
+        updatedAt: rasifalCache.date,
+        source: rasifalCache.source,
+        data: rasifalCache.data
     });
-  }
 });
 
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+app.get('/api/rasifal/force-update', async (req, res) => {
+    const success = await updateRasifal();
+    res.json({ status: success ? "SUCCESS" : "ERROR", message: success ? "Updated" : "Failed" });
+});
+
+app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
