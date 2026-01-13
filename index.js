@@ -12,15 +12,20 @@ const PORT = process.env.PORT || 10000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 
-let rasifalCache = { date: null, data: [], source: "AI Detailed Explanation (Eng-to-Nep)" };
+// १. क्यास सेटअप
+let rasifalCache = { 
+    date: null, 
+    data: [], 
+    source: "AI Detailed 6-Sentence Translation" 
+};
 
-// राशिको नाम कन्फ्युजन नहोस् भनेर म्यापिङ
+// राशिको नाम म्यापिङ
 const zodiacMap = "Aries: मेष, Taurus: वृष, Gemini: मिथुन, Cancer: कर्कट, Leo: सिंह, Virgo: कन्या, Libra: तुला, Scorpio: वृश्चिक, Sagittarius: धनु, Capricorn: मकर, Aquarius: कुम्भ, Pisces: मीन";
 
 async function getRawData() {
     let content = "";
     try {
-        const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 10000 });
+        const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
         const $ = cheerio.load(res.data);
         $('.item').each((i, el) => {
             content += $(el).find('.title').text() + ": " + $(el).find('.desc').text() + "\n";
@@ -30,29 +35,26 @@ async function getRawData() {
 }
 
 async function updateRasifal() {
-    console.log("⏳ अङ्ग्रेजीमा व्याख्या र नेपाली अनुवाद सुरु हुँदैछ...");
+    console.log("⏳ नयाँ प्रक्रिया: अङ्ग्रेजीमा व्याख्या र नेपाली अनुवाद सुरु भयो...");
     const rawData = await getRawData();
-    if (!rawData || rawData.length < 100) return false;
+    
+    if (!rawData || rawData.length < 100) {
+        console.log("❌ वेबसाइटबाट डेटा तान्न सकिएन।");
+        return false;
+    }
 
+    // तपाईँको ५-६ वाक्यको आइडिया
     const prompt = `
-    You are an expert Astrologer and Language Specialist.
+    You are an expert Astrologer. 
+    1. Read the Nepali horoscope data provided below.
+    2. Write a detailed 5 to 6 sentence explanation for EACH zodiac sign in ENGLISH first. 
+    3. Then, translate those 5-6 sentences into pure, traditional Nepali.
     
-    TASK:
-    1. Read the raw Nepali horoscope data provided below.
-    2. Understand the meaning in English.
-    3. Write a 5 to 6 sentence detailed explanation for each zodiac sign in ENGLISH. This expansion is mandatory to make the content unique.
-    4. Translate these 5-6 original English sentences into high-quality, traditional Nepali (ट्रेडिसनल नेपाली).
-    
-    RULES:
-    - Strictly use 5-6 sentences per sign.
-    - Zodiac Mapping: ${zodiacMap}.
-    - No Romanized Nepali. Use pure Nepali script.
-    - Focus on grammar and professional tone.
-    
-    OUTPUT FORMAT:
-    { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
+    Zodiac Mapping: ${zodiacMap}.
+    Output must be a valid JSON object.
+    Structure: { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
 
-    RAW DATA:
+    DATA:
     ${rawData}
     `;
 
@@ -64,28 +66,51 @@ async function updateRasifal() {
                 response_format: { type: "json_object" },
                 temperature: 0.7
             },
-            { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } }
+            { headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" } }
         );
 
         const aiOutput = JSON.parse(response.data.choices[0].message.content);
-        if (aiOutput.data && aiOutput.data.length > 0) {
+        
+        if (aiOutput.data && Array.isArray(aiOutput.data) && aiOutput.data.length > 0) {
             rasifalCache.data = aiOutput.data;
             rasifalCache.date = new Date().toISOString().split('T')[0];
+            console.log("✅ १२ वटै राशिको ५-६ वाक्यको फल तयार भयो।");
             return true;
+        } else {
+            console.log("⚠️ एआईले खाली डेटा पठायो।");
+            return false;
         }
-    } catch (e) { return false; }
+    } catch (e) { 
+        console.error("❌ एआई एरर:", e.response ? e.response.data : e.message);
+        return false; 
+    }
 }
 
+// राति १२:१० मा स्वतः चल्ने
 cron.schedule('10 0 * * *', updateRasifal);
 
 app.get('/api/rasifal', async (req, res) => {
-    if (!rasifalCache.data || rasifalCache.data.length === 0) await updateRasifal();
-    res.json({ status: "SUCCESS", updatedAt: rasifalCache.date, data: rasifalCache.data });
+    // यदि क्यास खाली छ भने तत्काल डेटा तान्ने
+    if (!rasifalCache.data || rasifalCache.data.length === 0) {
+        console.log("🔄 क्यास खाली छ, पहिलो पटक डेटा लोड हुँदैछ...");
+        await updateRasifal();
+    }
+    
+    res.json({
+        status: "SUCCESS",
+        updatedAt: rasifalCache.date,
+        source: rasifalCache.source,
+        data: rasifalCache.data
+    });
 });
 
 app.get('/api/rasifal/force-update', async (req, res) => {
     const success = await updateRasifal();
-    res.json({ status: success ? "SUCCESS" : "ERROR" });
+    res.json({ status: success ? "SUCCESS" : "ERROR", message: success ? "Updated" : "Failed" });
 });
 
-app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`🚀 सर्भर पोर्ट ${PORT} मा सुरु भयो।`);
+    // सर्भर सुरु हुने बित्तिकै एकपटक डेटा तान्न सुरु गर्ने
+    updateRasifal();
+});
