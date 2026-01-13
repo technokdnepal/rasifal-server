@@ -1,8 +1,4 @@
-// const cron = require('node-cron');
-
-// cron.schedule('10 0 * * *', () => {
-//   generateDailyRasifal();
-// });const express = require('express');
+const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cron = require('node-cron');
@@ -13,7 +9,7 @@ const PORT = process.env.PORT || 10000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // =======================
-// 1️⃣ In-Memory Cache
+// In-Memory Cache
 // =======================
 let rasifalCache = {
   date: null,
@@ -22,13 +18,13 @@ let rasifalCache = {
 };
 
 // =======================
-// 2️⃣ Utility
+// Utility – Nepal Date
 // =======================
 const todayNepal = () =>
   new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
 
 // =======================
-// 3️⃣ Scrape Hamro Patro
+// Scrape Hamro Patro
 // =======================
 async function scrapeHamroPatro() {
   const res = await axios.get('https://www.hamropatro.com/rashifal', {
@@ -51,7 +47,7 @@ async function scrapeHamroPatro() {
 }
 
 // =======================
-// 4️⃣ Scrape Nepali Patro
+// Scrape Nepali Patro
 // =======================
 async function scrapeNepaliPatro() {
   const res = await axios.get('https://nepalipatro.com.np/rashifal', {
@@ -74,23 +70,15 @@ async function scrapeNepaliPatro() {
 }
 
 // =======================
-// 5️⃣ Groq AI – Clean Nepali
+// Groq AI – Clean Nepali
 // =======================
 async function cleanWithGroq(rawData) {
   const prompt = `
 तपाईं एक अनुभवी नेपाली भाषा सम्पादक र ज्योतिषी हुनुहुन्छ।
+दुई वेबसाइटबाट आएको कच्चा राशिफललाई अत्यन्तै शुद्ध, सरल
+र २–३ वाक्यको प्राकृतिक नेपाली बनाउनुहोस्।
 
-तल दुई वेबसाइट (हाम्रो पात्र र नेपाली पात्रो) बाट आएको कच्चा राशिफल डाटा छ।
-तपाईंको काम:
-
-- अत्यन्तै शुद्ध, सरल र सबै नेपालीले बुझ्ने भाषा प्रयोग गर्ने
-- कुनै पनि गलत शब्द, अनावश्यक दोहोरिने वाक्य हटाउने
-- "चु, चे, चो", "शुभ रंग", "शुभ अंक" जस्ता कुरा नराख्ने
-- प्रत्येक राशिको भविष्यवाणी २–३ वाक्य मात्र
-- अत्यन्तै प्राकृतिक नेपाली (FM Radio / Newspaper style)
-- कुनै पनि हिन्दी, अंग्रेजी, मेशिन जस्तो भाषा प्रयोग नगर्ने
-
-OUTPUT अनिवार्य रूपमा JSON मात्र हुनुपर्छ:
+OUTPUT JSON मात्र:
 {
   "data": [
     { "sign": "मेष", "prediction": "..." }
@@ -112,8 +100,7 @@ ${JSON.stringify(rawData, null, 2)}
       headers: {
         Authorization: `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json'
-      },
-      timeout: 20000
+      }
     }
   );
 
@@ -121,12 +108,12 @@ ${JSON.stringify(rawData, null, 2)}
 }
 
 // =======================
-// 6️⃣ Daily Job – 12:10 AM
+// Cron Job – 12:10 AM Nepal
 // =======================
 cron.schedule(
   '10 0 * * *',
   async () => {
-    console.log('⏰ 12:10 AM – Daily Rasifal Update');
+    console.log('⏰ 12:10 AM – Updating Rasifal');
 
     try {
       const [hamro, nepali] = await Promise.all([
@@ -134,31 +121,30 @@ cron.schedule(
         scrapeNepaliPatro()
       ]);
 
-      const combined = [...hamro, ...nepali];
-      const clean = await cleanWithGroq(combined);
+      const clean = await cleanWithGroq([...hamro, ...nepali]);
 
       rasifalCache = {
         date: todayNepal(),
         data: clean,
-        source: 'HAMRO_PATRO + NEPALI_PATRO + GROQ'
+        source: 'Hamro Patro + Nepali Patro + Groq AI'
       };
 
-      console.log('✅ Rasifal Updated Successfully');
-    } catch (e) {
-      console.error('❌ Daily Update Failed:', e.message);
+      console.log('✅ Rasifal Updated');
+    } catch (err) {
+      console.error('❌ Rasifal Update Failed:', err.message);
     }
   },
   { timezone: 'Asia/Kathmandu' }
 );
 
 // =======================
-// 7️⃣ API Endpoint
+// API
 // =======================
 app.get('/api/rasifal', (req, res) => {
   if (!rasifalCache.data) {
     return res.status(503).json({
       status: 'ERROR',
-      message: 'Rasifal not generated yet. Please wait till 12:10 AM.'
+      message: 'राशिफल अपडेट गर्न सकिएन'
     });
   }
 
@@ -170,8 +156,10 @@ app.get('/api/rasifal', (req, res) => {
   });
 });
 
-app.get('/', (req, res) => res.send('Rasifal Server Online 🚀'));
+app.get('/', (req, res) => {
+  res.send('Rasifal Server Online 🚀');
+});
 
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on port ${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
