@@ -12,49 +12,56 @@ const PORT = process.env.PORT || 10000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 
-// १. क्यास सेटअप
 let rasifalCache = { 
     date: null, 
     data: [], 
-    source: "AI Detailed 6-Sentence Translation" 
+    source: "AI Unique Interpretation (Traditional Nepali)" 
 };
 
-// राशिको नाम म्यापिङ
+// १. राशिको नाम म्यापिङ (कन्फ्युजन हटाउन)
 const zodiacMap = "Aries: मेष, Taurus: वृष, Gemini: मिथुन, Cancer: कर्कट, Leo: सिंह, Virgo: कन्या, Libra: तुला, Scorpio: वृश्चिक, Sagittarius: धनु, Capricorn: मकर, Aquarius: कुम्भ, Pisces: मीन";
 
+// २. स्क्र्यापर: डेटा तान्ने
 async function getRawData() {
-    let content = "";
     try {
         const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
         const $ = cheerio.load(res.data);
+        let content = "";
         $('.item').each((i, el) => {
             content += $(el).find('.title').text() + ": " + $(el).find('.desc').text() + "\n";
         });
-    } catch (e) { console.error("Scraping Error:", e.message); }
-    return content;
+        return content;
+    } catch (e) {
+        console.error("Scraping Error:", e.message);
+        return null;
+    }
 }
 
+// ३. एआई प्रोसेसिङ (५-६ वाक्य र कोपी-पेस्ट रोक्ने कडा नियम)
 async function updateRasifal() {
-    console.log("⏳ नयाँ प्रक्रिया: अङ्ग्रेजीमा व्याख्या र नेपाली अनुवाद सुरु भयो...");
+    console.log("⏳ मौलिक राशिफल तयार हुँदैछ (५-६ वाक्यको नियम)...");
     const rawData = await getRawData();
-    
-    if (!rawData || rawData.length < 100) {
-        console.log("❌ वेबसाइटबाट डेटा तान्न सकिएन।");
-        return false;
-    }
+    if (!rawData) return false;
 
-    // तपाईँको ५-६ वाक्यको आइडिया
     const prompt = `
-    You are an expert Astrologer. 
-    1. Read the Nepali horoscope data provided below.
-    2. Write a detailed 5 to 6 sentence explanation for EACH zodiac sign in ENGLISH first. 
-    3. Then, translate those 5-6 sentences into pure, traditional Nepali.
+    You are a professional Astrologer and Language expert.
     
-    Zodiac Mapping: ${zodiacMap}.
-    Output must be a valid JSON object.
-    Structure: { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
+    TASK:
+    1. Read the provided Nepali horoscope data. 
+    2. Write a unique, 6-sentence detailed explanation for each zodiac sign in ENGLISH first. 
+    3. Now, IGNORE the original source language. Translate your OWN 6 English sentences into professional, Traditional Nepali.
+    
+    STRICT RULES (To prevent cheating):
+    - NO COPY-PASTING: If you use phrases like "आर्थिक लेनदेनमा सतर्कता" or "दाम्पत्य जीवन सुमधुर", you fail.
+    - BE CREATIVE: Use synonyms like "धनको कारोबार", "सम्बन्धमा मिठास", "सावधानी अपनाउनुहोस्".
+    - SENTENCE COUNT: Each zodiac must have exactly 5 to 6 sentences.
+    - NO PATTERN: Do NOT start every sign with "आजको दिनमा". Change the starting style for each sign.
+    - ZODIAC MAPPING: Use this mapping: ${zodiacMap}.
 
-    DATA:
+    OUTPUT JSON FORMAT:
+    { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
+
+    SOURCE DATA:
     ${rawData}
     `;
 
@@ -64,53 +71,52 @@ async function updateRasifal() {
                 model: GROQ_MODEL,
                 messages: [{ role: 'user', content: prompt }],
                 response_format: { type: "json_object" },
-                temperature: 0.7
+                temperature: 0.8
             },
             { headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" } }
         );
 
         const aiOutput = JSON.parse(response.data.choices[0].message.content);
         
-        if (aiOutput.data && Array.isArray(aiOutput.data) && aiOutput.data.length > 0) {
-            rasifalCache.data = aiOutput.data;
+        if (aiOutput.data && aiOutput.data.length > 0) {
+            // अन्तिम सफाइ: एआईले झुक्किएर कोपी गरेका केही शब्दहरूलाई अटो-रिप्लेस गर्ने
+            const finalData = aiOutput.data.map(item => ({
+                sign: item.sign,
+                prediction: item.prediction
+                    .replace(/आर्थिक लेनदेनमा सतर्कता अपनाउनुहोस्/g, "आर्थिक मामिलामा विशेष सावधानी राख्नुहोला")
+                    .replace(/दाम्पत्य जीवन सुमधुर रहनेछ/g, "पारिवारिक सम्बन्धमा सुखद वातावरण रहनेछ")
+                    .replace(/आजको दिनमा /g, "") // 'आजको दिनमा' हटाइने
+            }));
+
+            rasifalCache.data = finalData;
             rasifalCache.date = new Date().toISOString().split('T')[0];
-            console.log("✅ १२ वटै राशिको ५-६ वाक्यको फल तयार भयो।");
+            console.log("✅ ५-६ वाक्यको मौलिक राशिफल तयार भयो।");
             return true;
-        } else {
-            console.log("⚠️ एआईले खाली डेटा पठायो।");
-            return false;
         }
-    } catch (e) { 
-        console.error("❌ एआई एरर:", e.response ? e.response.data : e.message);
-        return false; 
+    } catch (e) {
+        console.error("AI Error:", e.message);
+        return false;
     }
 }
 
-// राति १२:१० मा स्वतः चल्ने
+// ४. सेड्युलर र एण्डपोइन्ट्स
 cron.schedule('10 0 * * *', updateRasifal);
 
 app.get('/api/rasifal', async (req, res) => {
-    // यदि क्यास खाली छ भने तत्काल डेटा तान्ने
-    if (!rasifalCache.data || rasifalCache.data.length === 0) {
-        console.log("🔄 क्यास खाली छ, पहिलो पटक डेटा लोड हुँदैछ...");
-        await updateRasifal();
-    }
-    
+    if (!rasifalCache.data || rasifalCache.data.length === 0) await updateRasifal();
     res.json({
         status: "SUCCESS",
         updatedAt: rasifalCache.date,
-        source: rasifalCache.source,
         data: rasifalCache.data
     });
 });
 
 app.get('/api/rasifal/force-update', async (req, res) => {
     const success = await updateRasifal();
-    res.json({ status: success ? "SUCCESS" : "ERROR", message: success ? "Updated" : "Failed" });
+    res.json({ status: success ? "SUCCESS" : "ERROR" });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 सर्भर पोर्ट ${PORT} मा सुरु भयो।`);
-    // सर्भर सुरु हुने बित्तिकै एकपटक डेटा तान्न सुरु गर्ने
-    updateRasifal();
+    console.log(`🚀 सर्भर पोर्ट ${PORT} मा चल्दैछ।`);
+    updateRasifal(); // सुरुमै एकपटक रन गर्ने
 });
