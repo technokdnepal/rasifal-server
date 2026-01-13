@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cron = require('node-cron');
+const cors = require('cors'); // CORS थपिएको छ
 require('dotenv').config();
 
 // १. टाइमजोन सेटिङ
@@ -10,7 +11,11 @@ process.env.TZ = process.env.TZ || 'Asia/Kathmandu';
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// २. Environment Variables लोड गर्ने
+// २. Middleware र सुरक्षा
+app.use(cors());
+app.use(express.json());
+
+// ३. Environment Variables लोड गर्ने
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -19,10 +24,10 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 let rasifalCache = { 
     date: null, 
     data: [], 
-    source: "Pending Update..." 
+    source: "सर्भर सुरु हुँदैछ..." 
 };
 
-// ३. स्क्र्यापर (Scraper)
+// ४. स्क्र्यापर (Scraper)
 async function getRawData() {
     try {
         const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
@@ -38,7 +43,7 @@ async function getRawData() {
     }
 }
 
-// ४. मुख्य एआई इन्जिन (Gemini with Llama Fallback)
+// ५. मुख्य एआई इन्जिन (Gemini with Llama Fallback)
 async function updateRasifal() {
     console.log("⏳ नयाँ राशिफल तयार हुँदैछ...");
     const rawData = await getRawData();
@@ -56,15 +61,17 @@ async function updateRasifal() {
     JSON: { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
     डेटा: ${rawData}`;
 
-    // पहिले Gemini प्रयास गर्ने (v1 Stable Endpoint)
+    // पहिले Gemini प्रयास गर्ने (v1beta for stable JSON mode)
     try {
-        console.log(`🚀 Gemini (${GEMINI_MODEL}) बाट प्रयास गर्दै...`);
-        // यहाँ v1beta बाट v1 मा परिवर्तन गरिएको छ
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        console.log(`🚀 ${GEMINI_MODEL} बाट डेटा तान्ने प्रयास...`);
+        // URL मा v1beta राखिएको छ र Field Name 'responseMimeType' सुधारेको छ
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
         
         const response = await axios.post(geminiUrl, {
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { response_mime_type: "application/json" }
+            generationConfig: { 
+                responseMimeType: "application/json" 
+            }
         });
 
         const output = JSON.parse(response.data.candidates[0].content.parts[0].text);
@@ -72,11 +79,11 @@ async function updateRasifal() {
             rasifalCache.data = output.data;
             rasifalCache.date = new Date().toISOString().split('T')[0];
             rasifalCache.source = "Google Gemini 1.5 Flash";
-            console.log("✅ सफल: जेमिनाईले उत्कृष्ट नेपालीमा डेटा तयार गर्यो।");
+            console.log("✅ सफल: जेमिनाईले उच्च गुणस्तरको राशिफल तयार गर्यो।");
             return true;
         }
     } catch (e) {
-        // ४०४ एररको कारण हेर्न विस्तृत लग थपिएको छ
+        // लगमा एररको विस्तृत विवरण प्रिन्ट हुन्छ
         console.warn("⚠️ Gemini Error Body:", e.response ? JSON.stringify(e.response.data) : e.message);
         console.warn("🔄 अब Groq (Llama) बाट काम चलाउँदै...");
 
@@ -91,7 +98,7 @@ async function updateRasifal() {
             const outputJSON = JSON.parse(groqRes.data.choices[0].message.content);
             rasifalCache.data = outputJSON.data;
             rasifalCache.date = new Date().toISOString().split('T')[0];
-            rasifalCache.source = "Groq Llama (Fallback Mode)";
+            rasifalCache.source = "Groq Llama (Fallback)";
             console.log("✅ सफल: लामा (Llama) ले ब्याकअप डेटा तयार गर्यो।");
             return true;
         } catch (err) {
@@ -101,10 +108,10 @@ async function updateRasifal() {
     }
 }
 
-// ५. सेड्युलर (राति १२:१०)
+// ६. सेड्युलर (राति १२:१० मा स्वतः चल्ने)
 cron.schedule('10 0 * * *', updateRasifal);
 
-// ६. एण्डपोइन्ट्स
+// ७. एण्डपोइन्ट्स (API Routes)
 app.get('/api/rasifal', async (req, res) => {
     if (!rasifalCache.data || rasifalCache.data.length === 0) {
         await updateRasifal();
@@ -119,10 +126,11 @@ app.get('/api/rasifal', async (req, res) => {
 
 app.get('/api/rasifal/force-update', async (req, res) => {
     const success = await updateRasifal();
-    res.json({ status: success ? "SUCCESS" : "ERROR" });
+    res.json({ status: success ? "SUCCESS" : "ERROR", engine: rasifalCache.source });
 });
 
+// ८. सर्भर सुरु गर्ने
 app.listen(PORT, () => {
     console.log(`🚀 सर्भर पोर्ट ${PORT} मा सुरु भयो।`);
-    updateRasifal(); 
+    updateRasifal(); // डिप्लोय हुने बित्तिकै एकपटक रन गर्ने
 });
