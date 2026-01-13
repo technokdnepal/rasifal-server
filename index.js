@@ -5,16 +5,15 @@ const cron = require('node-cron');
 const cors = require('cors');
 require('dotenv').config();
 
-// १. टाइमजोन सेटिङ
-process.env.TZ = process.env.TZ || 'Asia/Kathmandu';
-
+// १. टाइमजोन र सर्भर सेटिङ
+process.env.TZ = 'Asia/Kathmandu';
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
 
-// २. Environment Variables
+// २. कुञ्जीहरू लोड गर्ने
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -23,17 +22,19 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 let rasifalCache = { 
     date: null, 
     data: [], 
-    source: "Waiting for update..." 
+    source: "प्रतीक्षा गरिँदै..." 
 };
 
-// ३. स्क्र्यापर
+// ३. हाम्रो पात्रोबाट डेटा तान्ने
 async function getRawData() {
     try {
         const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
         const $ = cheerio.load(res.data);
         let content = "";
         $('.item').each((i, el) => {
-            content += $(el).find('.title').text() + ": " + $(el).find('.desc').text() + "\n";
+            const title = $(el).find('.title').text().trim();
+            const desc = $(el).find('.desc').text().trim();
+            if (title && desc) content += `${title}: ${desc}\n`;
         });
         return content;
     } catch (e) {
@@ -42,53 +43,52 @@ async function getRawData() {
     }
 }
 
-// ४. मुख्य एआई इन्जिन (Gemini with Llama Fallback)
+// ४. मुख्य एआई कार्यविधि
 async function updateRasifal() {
     console.log("⏳ नयाँ राशिफल तयार हुँदैछ...");
     const rawData = await getRawData();
     if (!rawData) return false;
 
-    // ८बी मोडलका लागि पनि ५-६ वाक्य लेख्न बाध्य पार्ने कडा प्रम्प्ट
-    const prompt = `You are a Professional Astrologer for technokd.com.
-    TASK: Read the raw Nepali data and WRITE a 6-sentence detailed horoscope for each of the 12 signs in PURE NEPALI.
+    // एआईलाई कडा र स्पष्ट निर्देशन
+    const prompt = `You are a professional astrologer for technokd.com.
+    TASK: Write a 6-sentence detailed daily horoscope for each of the 12 zodiac signs based on the provided data.
     
     STRICT RULES:
-    1. Sentence Count: You MUST write exactly 6 sentences for each sign.
-    2. No Copying: Use your own words. Do not use phrases like "आर्थिक लेनदेनमा सतर्कता".
-    3. Natural Tone: Write like a human columnist. 
-    4. Language: Pure Nepali only. No Hindi words like 'दरवाजा' or 'अच्छी'.
-
-    JSON FORMAT:
-    { "data": [ {"sign": "मेष", "prediction": "Write 6 long sentences here..."}, ... ] }
+    1. Write exactly 6 sentences for each sign.
+    2. Use pure, natural Nepali language only. No nonsense words like 'किर्ण' or 'छालो'.
+    3. Do NOT repeat the signs or append extra text after the JSON.
+    4. Provide the result ONLY in this JSON format: { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
     
-    DATA: ${rawData}`;
+    SOURCE DATA:
+    ${rawData}`;
 
-    // ५. Gemini प्रयास (responseMimeType फिक्स गरिएको)
+    // ५. पहिले Gemini प्रयास (v1 Endpoint)
     try {
-        console.log(`🚀 ${GEMINI_MODEL} बाट प्रयास गर्दै...`);
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        console.log(`🚀 Gemini (${GEMINI_MODEL}) बाट प्रयास गर्दै...`);
+        // यहाँ हामीले v1beta को सट्टा v1 प्रयोग गरेका छौँ र responseMimeType लाई CamelCase मा राखेका छौँ
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
         
         const response = await axios.post(geminiUrl, {
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { 
-                responseMimeType: "application/json" // यहाँ Spelling फिक्स गरियो
+                responseMimeType: "application/json" 
             }
         });
 
         const output = JSON.parse(response.data.candidates[0].content.parts[0].text);
-        if (output.data && output.data.length > 0) {
+        if (output.data && output.data.length === 12) {
             rasifalCache.data = output.data;
-            rasifalCache.date = new Date().toISOString().split('T')[0];
+            rasifalCache.date = new Date().toLocaleDateString('en-CA');
             rasifalCache.source = "Google Gemini 1.5 Flash";
-            console.log("✅ सफल: जेमिनाईले उच्च गुणस्तरको राशिफल तयार गर्यो।");
+            console.log("✅ सफल: जेमिनाईले उत्कृष्ट डेटा तयार गर्यो।");
             return true;
         }
     } catch (e) {
-        // लगमा एररको विस्तृत विवरण
-        console.warn("⚠️ Gemini Error Details:", e.response ? JSON.stringify(e.response.data) : e.message);
-        console.warn("🔄 अब Groq (Llama) बाट काम चलाउँदै...");
-
+        // जेमिनाई फेल हुँदाको वास्तविक एरर हेर्न यो लग अति आवश्यक छ
+        console.error("❌ Gemini Error Details:", e.response ? JSON.stringify(e.response.data) : e.message);
+        
         // ६. Fallback to Groq Llama
+        console.log("🔄 अब Groq (Llama) बाट काम चलाउँदै...");
         try {
             const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                 model: GROQ_MODEL,
@@ -98,7 +98,7 @@ async function updateRasifal() {
 
             const outputJSON = JSON.parse(groqRes.data.choices[0].message.content);
             rasifalCache.data = outputJSON.data;
-            rasifalCache.date = new Date().toISOString().split('T')[0];
+            rasifalCache.date = new Date().toLocaleDateString('en-CA');
             rasifalCache.source = "Groq Llama (Fallback Mode)";
             console.log("✅ सफल: लामाले ब्याकअप डेटा तयार गर्यो।");
             return true;
@@ -109,8 +109,10 @@ async function updateRasifal() {
     }
 }
 
+// ७. सेड्युलर (राति १२:१०)
 cron.schedule('10 0 * * *', updateRasifal);
 
+// ८. एण्डपोइन्ट्स
 app.get('/api/rasifal', async (req, res) => {
     if (!rasifalCache.data || rasifalCache.data.length === 0) {
         await updateRasifal();
