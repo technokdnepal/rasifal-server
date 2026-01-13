@@ -44,25 +44,24 @@ async function updateRasifal() {
     if (!rawData) return false;
 
     const prompt = `
-    You are a professional Astrologer and Language expert.
-    
-    TASK:
-    1. Read the provided Nepali horoscope data. 
-    2. Write a unique, 6-sentence detailed explanation for each zodiac sign in ENGLISH first. 
-    3. Now, IGNORE the original source language. Translate your OWN 6 English sentences into professional, Traditional Nepali.
-    
-    STRICT RULES (To prevent cheating):
-    - NO COPY-PASTING: If you use phrases like "आर्थिक लेनदेनमा सतर्कता" or "दाम्पत्य जीवन सुमधुर", you fail.
-    - BE CREATIVE: Use synonyms like "धनको कारोबार", "सम्बन्धमा मिठास", "सावधानी अपनाउनुहोस्".
-    - SENTENCE COUNT: Each zodiac must have exactly 5 to 6 sentences.
-    - NO PATTERN: Do NOT start every sign with "आजको दिनमा". Change the starting style for each sign.
-    - ZODIAC MAPPING: Use this mapping: ${zodiacMap}.
+    You are a Professional Nepali Astrologer. 
+    Your goal is to provide a unique 6-sentence horoscope in TRADITIONAL NEPALI ONLY.
 
-    OUTPUT JSON FORMAT:
-    { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
+    INSTRUCTIONS:
+    1. Analyze the raw source data for each zodiac sign.
+    2. Think of a 6-sentence explanation in English (Internal step).
+    3. Final Output: Write the final 6 sentences ONLY in pure Nepali (नेपाली भाषामा मात्र).
+    
+    STRICT RULES:
+    - NO ENGLISH in the prediction field.
+    - NO REPETITION: Do NOT start any sign with "Today's horoscope" or "आजको दिनमा". 
+    - VARIATION: Start each sign differently (e.g., "यो राशिका व्यक्तिहरूका लागि...", "समय अनुकूल छ...", "आजको ग्रहदशा अनुसार...").
+    - UNIQUE CONTENT: Use synonyms. Do not copy phrases like "आर्थिक लेनदेनमा सतर्कता".
 
-    SOURCE DATA:
-    ${rawData}
+    OUTPUT JSON:
+    { "data": [ {"sign": "मेष", "prediction": "...(6 unique Nepali sentences)..."}, ... ] }
+
+    SOURCE: ${rawData}
     `;
 
     try {
