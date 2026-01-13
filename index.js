@@ -5,7 +5,7 @@ const cron = require('node-cron');
 const cors = require('cors');
 require('dotenv').config();
 
-// १. सर्भर र टाइमजोन सेटिङ
+// १. टाइमजोन र सर्भर सेटिङ
 process.env.TZ = 'Asia/Kathmandu';
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -22,12 +22,11 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 let rasifalCache = { 
     date: null, 
     data: [], 
-    source: "Waiting for update..." 
+    source: "Waiting for data update..." 
 };
 
-// ३. अत्यन्तै बलियो स्क्र्यापर (Hamro Patro + Nepali Patro Backup)
+// ३. अत्यन्तै बलियो बहु-स्रोत स्क्र्यापर
 async function getRawData() {
-    // ब्राउजर जस्तै देखिनका लागि User-Agent
     const config = {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
         timeout: 15000
@@ -40,18 +39,18 @@ async function getRawData() {
         const $ = cheerio.load(res.data);
         let content = "";
         
-        $('.item, .desc-card').each((i, el) => {
-            const title = $(el).find('.title, h2').text().trim();
-            const desc = $(el).find('.desc, p').text().trim();
+        // धेरै प्रकारका सेलेक्टरहरू प्रयोग गरिएको ताकि संरचना बदलिए पनि काम गरोस्
+        $('.item, .desc-card, .article-content').each((i, el) => {
+            const title = $(el).find('.title, h2, h3').text().trim();
+            const desc = $(el).find('.desc, p, .desc-card-text').text().trim();
             if (title && desc) content += `${title}: ${desc}\n`;
         });
 
-        if (content.length > 500) {
-            console.log("✅ हाम्रो पात्रोबाट डेटा प्राप्त भयो।");
+        if (content.length > 300) {
             return { source: "Hamro Patro", text: content };
         }
     } catch (e) {
-        console.warn("⚠️ हाम्रो पात्रोमा समस्या आयो, ब्याकअप स्रोतमा जाँदै...");
+        console.warn("⚠️ हाम्रो पात्रोमा समस्या आयो, ब्याकअपमा जाँदै...");
     }
 
     // प्रयास २: नेपाली पात्रो (Backup)
@@ -61,14 +60,13 @@ async function getRawData() {
         const $ = cheerio.load(res.data);
         let content = "";
         
-        $('.horoscope-sign-info, .card').each((i, el) => {
-            const title = $(el).find('h2, .title').text().trim();
-            const desc = $(el).find('p, .description').text().trim();
+        $('.horoscope-sign-info, .card, .rashifal-card').each((i, el) => {
+            const title = $(el).find('h2, .title, h4').text().trim();
+            const desc = $(el).find('p, .description, .text-justify').text().trim();
             if (title && desc) content += `${title}: ${desc}\n`;
         });
 
-        if (content.length > 500) {
-            console.log("✅ नेपाली पात्रोबाट डेटा प्राप्त भयो।");
+        if (content.length > 300) {
             return { source: "Nepali Patro", text: content };
         }
     } catch (e) {
@@ -77,9 +75,9 @@ async function getRawData() {
     }
 }
 
-// ४. मुख्य एआई कार्यविधि (English Explanation Mode)
+// ४. मुख्य एआई इन्जिन (English Explanation Mode)
 async function updateRasifal() {
-    console.log("⏳ अङ्ग्रेजीमा राशिफल तयार हुँदैछ...");
+    console.log("⏳ अङ्ग्रेजीमा राशिफलको व्याख्या तयार हुँदैछ...");
     const rawDataObj = await getRawData();
     
     if (!rawDataObj) {
@@ -87,24 +85,26 @@ async function updateRasifal() {
         return false;
     }
 
-    const prompt = `You are a professional English Astrologer.
-    TASK: Using the provided Nepali horoscope data from ${rawDataObj.source}, WRITE a detailed daily horoscope for each of the 12 signs in professional English.
+    // एआईलाई अङ्ग्रेजीमा व्याख्या गर्न कडा निर्देशन
+    const prompt = `You are a professional English Astrologer. 
+    Using the following raw data from ${rawDataObj.source}, EXPLAIN each of the 12 zodiac signs in 5-6 detailed, professional English sentences.
     
     STRICT RULES:
-    1. Sentence Count: Write exactly 5 to 6 meaningful sentences for each zodiac sign.
-    2. Accuracy: Maintain the 100% correct meaning from the source.
-    3. Tone: Professional, clear, and empathetic.
-    4. Output: Provide strictly a JSON object.
+    1. Sentence Count: Write exactly 5 to 6 meaningful sentences for each sign.
+    2. Meaning: Preserve the 100% correct essence and meaning from the source.
+    3. Output: Provide ONLY a valid JSON object.
     
     JSON FORMAT: { "data": [ {"sign": "Aries", "prediction": "..."}, ... ] }
     DATA: ${rawDataObj.text}`;
 
-    // Gemini प्रयास (v1 Endpoint for Stability)
+    // Gemini प्रयास (v1beta with responseMimeType Fix)
     try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
         const response = await axios.post(geminiUrl, {
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json" }
+            generationConfig: { 
+                responseMimeType: "application/json" 
+            }
         });
 
         const output = JSON.parse(response.data.candidates[0].content.parts[0].text);
@@ -112,14 +112,13 @@ async function updateRasifal() {
             rasifalCache.data = output.data;
             rasifalCache.date = new Date().toLocaleDateString('en-CA');
             rasifalCache.source = `Google Gemini (${rawDataObj.source})`;
+            console.log("✅ सफल: जेमिनाईले अङ्ग्रेजी व्याख्या तयार गर्यो।");
             return true;
         }
     } catch (e) {
-        console.error("❌ Gemini Error:", e.response ? JSON.stringify(e.response.data) : e.message);
-        
-        // Fallback to Groq Llama (High Quality English)
+        // Fallback to Groq Llama
+        console.warn("🔄 Gemini फेल भयो, अब Groq (Llama) बाट अङ्ग्रेजीमा व्याख्या गर्दै...");
         try {
-            console.log("🔄 Groq (Llama) बाट अङ्ग्रेजीमा व्याख्या गर्दै...");
             const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                 model: GROQ_MODEL,
                 messages: [{ role: 'user', content: prompt }],
@@ -141,7 +140,7 @@ async function updateRasifal() {
 // ५. सेड्युलर (राति १२:१०)
 cron.schedule('10 0 * * *', updateRasifal);
 
-// ६. एण्डपोइन्ट्स
+// ६. एण्डपोइन्ट्स (Routes)
 app.get('/api/rasifal', async (req, res) => {
     if (!rasifalCache.data || rasifalCache.data.length === 0) {
         await updateRasifal();
@@ -149,7 +148,6 @@ app.get('/api/rasifal', async (req, res) => {
     res.json(rasifalCache);
 });
 
-// फोर्स अपडेट एण्डपोइन्ट
 app.get('/api/rasifal/force-update', async (req, res) => {
     const success = await updateRasifal();
     res.json({ status: success ? "SUCCESS" : "ERROR", engine: rasifalCache.source });
