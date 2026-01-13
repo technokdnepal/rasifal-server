@@ -4,95 +4,90 @@ const cheerio = require('cheerio');
 const cron = require('node-cron');
 require('dotenv').config();
 
+process.env.TZ = 'Asia/Kathmandu';
+
 const app = express();
 const PORT = process.env.PORT || 10000;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-// =======================
-// In-Memory Cache
-// =======================
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
+
+/* =======================
+   IN-MEMORY DAILY CACHE
+======================= */
 let rasifalCache = {
   date: null,
   data: null,
   source: null
 };
 
-// =======================
-// Utility – Nepal Date
-// =======================
-const todayNepal = () =>
-  new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kathmandu' });
+/* =======================
+   UTILS
+======================= */
+function todayNepal() {
+  return new Date().toISOString().split('T')[0];
+}
 
-// =======================
-// Scrape Hamro Patro
-// =======================
+/* =======================
+   SCRAPERS
+======================= */
 async function scrapeHamroPatro() {
-  const res = await axios.get('https://www.hamropatro.com/rashifal', {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    timeout: 15000
+  const { data } = await axios.get('https://www.hamropatro.com/rashifal');
+  const $ = cheerio.load(data);
+  const list = [];
+
+  $('.item').each((i, el) => {
+    const sign = $(el).find('.title').text().trim();
+    const prediction = $(el).find('.desc').text().trim();
+    if (sign && prediction) list.push({ sign, prediction });
   });
 
-  const $ = cheerio.load(res.data);
-  const out = [];
-
-  $('.item').each((_, el) => {
-    const sign = $(el).find('h3').text().trim();
-    const text = $(el).find('.desc p').text().trim();
-    if (sign && text.length > 30) {
-      out.push({ sign, text });
-    }
-  });
-
-  return out;
+  return list;
 }
 
-// =======================
-// Scrape Nepali Patro
-// =======================
 async function scrapeNepaliPatro() {
-  const res = await axios.get('https://nepalipatro.com.np/rashifal', {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    timeout: 15000
-  });
+  const { data } = await axios.get('https://www.nepalipatro.com.np/rashifal');
+  const $ = cheerio.load(data);
+  const list = [];
 
-  const $ = cheerio.load(res.data);
-  const out = [];
-
-  $('.rashifal-item').each((_, el) => {
+  $('.rashifal-item').each((i, el) => {
     const sign = $(el).find('h3').text().trim();
-    const text = $(el).find('p').text().trim();
-    if (sign && text.length > 30) {
-      out.push({ sign, text });
-    }
+    const prediction = $(el).find('p').text().trim();
+    if (sign && prediction) list.push({ sign, prediction });
   });
 
-  return out;
+  return list;
 }
 
-// =======================
-// Groq AI – Clean Nepali
-// =======================
+/* =======================
+   GROQ CLEANER
+======================= */
 async function cleanWithGroq(rawData) {
   const prompt = `
-तपाईं एक अनुभवी नेपाली भाषा सम्पादक र ज्योतिषी हुनुहुन्छ।
-दुई वेबसाइटबाट आएको कच्चा राशिफललाई अत्यन्तै शुद्ध, सरल
-र २–३ वाक्यको प्राकृतिक नेपाली बनाउनुहोस्।
+तल दिइएको राशिफल डाटालाई
+- शुद्ध
+- सरल
+- सबै नेपालीले बुझ्ने
+- कुनै बनावटी शब्द बिना
+पुनर्लेखन गर्नुहोस्।
 
-OUTPUT JSON मात्र:
+JSON मात्र output गर्नुहोस्।
+
+FORMAT:
 {
-  "data": [
-    { "sign": "मेष", "prediction": "..." }
-  ]
+ "data":[
+  {"sign":"मेष","prediction":"..."}
+ ]
 }
 
-RAW INPUT:
-${JSON.stringify(rawData, null, 2)}
+DATA:
+${JSON.stringify(rawData)}
 `;
 
   const res = await axios.post(
     'https://api.groq.com/openai/v1/chat/completions',
     {
-      model: 'mixtral-8x7b-32768',
+      model: GROQ_MODEL,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.2
     },
@@ -107,39 +102,53 @@ ${JSON.stringify(rawData, null, 2)}
   return JSON.parse(res.data.choices[0].message.content).data;
 }
 
-// =======================
-// Cron Job – 12:10 AM Nepal
-// =======================
-cron.schedule(
-  '10 0 * * *',
-  async () => {
-    console.log('⏰ 12:10 AM – Updating Rasifal');
+/* =======================
+   STATIC BACKUP
+======================= */
+const STATIC_BACKUP = [
+  { sign: 'मेष', prediction: 'आज आत्मविश्वास बढ्नेछ।' },
+  { sign: 'वृष', prediction: 'धन लाभको संकेत छ।' },
+  { sign: 'मिथुन', prediction: 'सम्बन्ध मजबुत हुनेछन्।' },
+  { sign: 'कर्कट', prediction: 'स्वास्थ्यमा ध्यान दिनुहोस्।' },
+  { sign: 'सिंह', prediction: 'मान–सम्मान बढ्नेछ।' },
+  { sign: 'कन्या', prediction: 'धैर्यले सफलता दिलाउनेछ।' },
+  { sign: 'तुला', prediction: 'आर्थिक पक्ष बलियो रहनेछ।' },
+  { sign: 'वृश्चिक', prediction: 'निर्णय सोचेर लिनुहोस्।' },
+  { sign: 'धनु', prediction: 'यात्राको योग छ।' },
+  { sign: 'मकर', prediction: 'पुराना काम पूरा हुनेछन्।' },
+  { sign: 'कुम्भ', prediction: 'नयाँ अवसर प्राप्त हुनेछ।' },
+  { sign: 'मीन', prediction: 'मानसिक शान्ति मिल्नेछ।' }
+];
 
-    try {
-      const [hamro, nepali] = await Promise.all([
-        scrapeHamroPatro(),
-        scrapeNepaliPatro()
-      ]);
+/* =======================
+   DAILY UPDATE (12:10 AM)
+======================= */
+cron.schedule('10 0 * * *', async () => {
+  try {
+    console.log('🌙 Daily Rasifal Update Started');
 
-      const clean = await cleanWithGroq([...hamro, ...nepali]);
+    const [hamro, nepali] = await Promise.all([
+      scrapeHamroPatro(),
+      scrapeNepaliPatro()
+    ]);
 
-      rasifalCache = {
-        date: todayNepal(),
-        data: clean,
-        source: 'Hamro Patro + Nepali Patro + Groq AI'
-      };
+    const cleaned = await cleanWithGroq([...hamro, ...nepali]);
 
-      console.log('✅ Rasifal Updated');
-    } catch (err) {
-      console.error('❌ Rasifal Update Failed:', err.message);
-    }
-  },
-  { timezone: 'Asia/Kathmandu' }
-);
+    rasifalCache = {
+      date: todayNepal(),
+      data: cleaned,
+      source: 'Hamro Patro + Nepali Patro + Groq AI'
+    };
 
-// =======================
-// API
-// =======================
+    console.log('✅ Rasifal Updated Successfully');
+  } catch (e) {
+    console.error('❌ Daily Update Failed:', e.message);
+  }
+});
+
+/* =======================
+   API ENDPOINTS
+======================= */
 app.get('/api/rasifal', (req, res) => {
   if (!rasifalCache.data) {
     return res.status(503).json({
@@ -150,16 +159,41 @@ app.get('/api/rasifal', (req, res) => {
 
   res.json({
     status: 'SUCCESS',
-    date: rasifalCache.date,
     source: rasifalCache.source,
+    date: rasifalCache.date,
     data: rasifalCache.data
   });
 });
 
-app.get('/', (req, res) => {
-  res.send('Rasifal Server Online 🚀');
+/* Manual emergency update */
+app.get('/api/rasifal/force-update', async (req, res) => {
+  try {
+    const [hamro, nepali] = await Promise.all([
+      scrapeHamroPatro(),
+      scrapeNepaliPatro()
+    ]);
+
+    const cleaned = await cleanWithGroq([...hamro, ...nepali]);
+
+    rasifalCache = {
+      date: todayNepal(),
+      data: cleaned,
+      source: 'Manual Force Update'
+    };
+
+    res.json({ status: 'SUCCESS' });
+  } catch (e) {
+    res.status(500).json({
+      status: 'ERROR',
+      fallback: STATIC_BACKUP
+    });
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.get('/', (_, res) =>
+  res.send('✅ Rasifal Server Running (Daily Stable Mode)')
+);
+
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
