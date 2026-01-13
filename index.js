@@ -44,22 +44,21 @@ async function updateRasifal() {
     if (!rawData) return false;
 
     const prompt = `
-    You are a Professional Nepali Astrologer. 
-    Your goal is to provide a unique 6-sentence horoscope in TRADITIONAL NEPALI ONLY.
-
-    INSTRUCTIONS:
-    1. Analyze the raw source data for each zodiac sign.
-    2. Think of a 6-sentence explanation in English (Internal step).
-    3. Final Output: Write the final 6 sentences ONLY in pure Nepali (नेपाली भाषामा मात्र).
+    You are a Native Nepali Content Writer and Astrologer for 'technokd.com'.
     
-    STRICT RULES:
-    - NO ENGLISH in the prediction field.
-    - NO REPETITION: Do NOT start any sign with "Today's horoscope" or "आजको दिनमा". 
-    - VARIATION: Start each sign differently (e.g., "यो राशिका व्यक्तिहरूका लागि...", "समय अनुकूल छ...", "आजको ग्रहदशा अनुसार...").
-    - UNIQUE CONTENT: Use synonyms. Do not copy phrases like "आर्थिक लेनदेनमा सतर्कता".
+    TASK:
+    1. Read the raw data and understand the inner meaning of each zodiac sign.
+    2. Do NOT translate word-to-word.
+    3. WRITE an original 5-sentence paragraph for each sign in "Natural, Flowing Nepali" (मीठो र ठेट नेपाली).
+    
+    STRICT GUIDELINES for 'Natural Feel':
+    - Start each sign differently. Avoid "यो राशिका व्यक्ति" or "आजको दिन".
+    - Use natural phrases like: "समयले साथ दिने देखिन्छ", "सचेत रहनु बुद्धिमानी हुनेछ", "मनमा उत्साह बढ्नेछ".
+    - No English words like 'millennial' or 'professional' in Nepali text.
+    - Write it like a human newspaper columnist, not a robot.
 
     OUTPUT JSON:
-    { "data": [ {"sign": "मेष", "prediction": "...(6 unique Nepali sentences)..."}, ... ] }
+    { "data": [ {"sign": "मेष", "prediction": "...(5-6 natural Nepali sentences)..."}, ... ] }
 
     SOURCE: ${rawData}
     `;
