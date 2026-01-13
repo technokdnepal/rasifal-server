@@ -64,16 +64,19 @@ async function updateDailyRasifal() {
         return false;
     }
 
-    const prompt = `
-    You are a professional editor. Below is raw horoscope data from Hamro Patro and Nepali Patro.
-    Combine them and rewrite into simple, clean, and natural Nepali. 
-    Use ONLY the information provided. Do not use external knowledge.
-    Output MUST be in valid JSON format.
+const prompt = `
+    तपाईं एक अनुभवी ज्योतिषी हुनुहुन्छ। तल दिइएको डाटा 'हाम्रो पात्रो' र 'नेपाली पात्रो' को आजको राशिफल हो।
+    
+    तपाईंको काम (TASK):
+    १. यो डाटालाई आधार मान्नुहोस् (Meaning यही हुनुपर्छ)।
+    २. तर, यसलाई पूर्ण रूपमा आफ्नै नयाँ र फरक शब्दहरूमा लेख्नुहोस्।
+    ३. स्रोत (Source) का वाक्यहरू वा शब्दहरूको समूह जस्ताको तस्तै कोपी गर्न कडा प्रतिबन्ध छ।
+    ४. प्रत्येक राशिको फललाई अलि छोटो र प्रभावकारी बनाउनुहोस्।
+    ५. उदाहरण: यदि स्रोतमा "आर्थिक लाभ हुनेछ" छ भने, तपाईंले "धनको आगमन हुने योग छ" वा "आर्थिक पक्ष सबल बन्नेछ" लेख्नुहोस्।
+    ६. जवाफ अनिवार्य रूपमा यो JSON ढाँचामा मात्र दिनुहोस्:
+    { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
 
-    JSON FORMAT:
-    { "data": [ {"sign": "मेष", "prediction": "..."}, {"sign": "वृष", "prediction": "..."} ] }
-
-    RAW DATA:
+    RAW DATA FOR BASIS:
     ${rawData}
     `;
 
