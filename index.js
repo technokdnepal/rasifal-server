@@ -19,7 +19,7 @@ const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 let rasifalCache = { 
     date: null, 
     data: [], 
-    source: "Google Gemini (High Quality Nepali)" 
+    source: "Pending Update..." 
 };
 
 // ३. स्क्र्यापर (Scraper)
@@ -44,7 +44,6 @@ async function updateRasifal() {
     const rawData = await getRawData();
     if (!rawData) return false;
 
-    // कडा र स्पष्ट नेपाली प्रम्प्ट
     const prompt = `तपाईँ एक अनुभवी नेपाली ज्योतिषी र लेखक हुनुहुन्छ। 
     तलको डेटालाई आधार मानेर १२ वटै राशिको फल ५-६ वाक्यमा 'अत्यन्तै मिठो र प्राकृतिक' नेपालीमा लेख्नुहोस्।
     
@@ -57,10 +56,12 @@ async function updateRasifal() {
     JSON: { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
     डेटा: ${rawData}`;
 
-    // पहिले Gemini 1.5 Flash प्रयास गर्ने
+    // पहिले Gemini प्रयास गर्ने (v1 Stable Endpoint)
     try {
-        console.log(`🚀 ${GEMINI_MODEL} बाट डेटा तान्दै...`);
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        console.log(`🚀 Gemini (${GEMINI_MODEL}) बाट प्रयास गर्दै...`);
+        // यहाँ v1beta बाट v1 मा परिवर्तन गरिएको छ
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        
         const response = await axios.post(geminiUrl, {
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: { response_mime_type: "application/json" }
@@ -71,11 +72,14 @@ async function updateRasifal() {
             rasifalCache.data = output.data;
             rasifalCache.date = new Date().toISOString().split('T')[0];
             rasifalCache.source = "Google Gemini 1.5 Flash";
-            console.log("✅ सफल: जेमिनाईले उच्च गुणस्तरको राशिफल तयार गर्यो।");
+            console.log("✅ सफल: जेमिनाईले उत्कृष्ट नेपालीमा डेटा तयार गर्यो।");
             return true;
         }
     } catch (e) {
-        console.warn("⚠️ Gemini मा समस्या आयो, अब Groq (Llama) बाट काम चलाउँदै...");
+        // ४०४ एररको कारण हेर्न विस्तृत लग थपिएको छ
+        console.warn("⚠️ Gemini Error Body:", e.response ? JSON.stringify(e.response.data) : e.message);
+        console.warn("🔄 अब Groq (Llama) बाट काम चलाउँदै...");
+
         // Fallback to Groq Llama
         try {
             const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
@@ -87,7 +91,7 @@ async function updateRasifal() {
             const outputJSON = JSON.parse(groqRes.data.choices[0].message.content);
             rasifalCache.data = outputJSON.data;
             rasifalCache.date = new Date().toISOString().split('T')[0];
-            rasifalCache.source = "Groq Llama (Fallback)";
+            rasifalCache.source = "Groq Llama (Fallback Mode)";
             console.log("✅ सफल: लामा (Llama) ले ब्याकअप डेटा तयार गर्यो।");
             return true;
         } catch (err) {
@@ -120,5 +124,5 @@ app.get('/api/rasifal/force-update', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 सर्भर पोर्ट ${PORT} मा सुरु भयो।`);
-    updateRasifal(); // सुरुमै एकपटक रन गर्ने
+    updateRasifal(); 
 });
