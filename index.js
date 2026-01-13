@@ -63,7 +63,6 @@ async function updateDailyRasifal() {
         console.error("❌ वेबसाइटबाट डेटा तान्न सकिएन।");
         return false;
     }
-
 cconst prompt = `
 तपाईं एक विद्धान नेपाली ज्योतिषी र लेखक हुनुहुन्छ। तल दिइएको डाटा 'हाम्रो पात्रो' र 'नेपाली पात्रो' को आजको राशिफल हो।
 तपाईंको मुख्य काम: तल दिइएको राशिफलको 'अर्थ' नबिगारी त्यसलाई पूर्ण रूपमा 'नयाँ शब्द' र 'नयाँ शैली' मा पुनर्लेखन (Rewrite) गर्नु हो।
@@ -80,7 +79,6 @@ ${rawData}
 
 Output JSON format ONLY.
 `;
-
     try {
         const response = await axios.post(
             'https://api.groq.com/openai/v1/chat/completions',
