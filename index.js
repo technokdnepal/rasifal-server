@@ -63,15 +63,41 @@ async function generateRasifal() {
 
   const english = await groq([
     {
-      role: "user",
-      content: `
-Write today's 12 zodiac horoscopes in clear English.
-Rules:
-- 2 short sentences each
-- Neutral newspaper tone
-- No clichés
-Output STRICT JSON only:
-{ "data": [ { "sign": "Aries", "prediction": "..." } ] }
+तिमी एक नेपाली ज्योतिष लेखक हौ।
+
+काम:
+आजको १२ राशिको दैनिक राशिफल लेख।
+
+महत्वपूर्ण नियम:
+1. भाषा Hamro Patro र Nepali Patro जस्तै हुनुपर्छ
+2. वाक्य छोटा र सरल हुनुपर्छ
+3. कुनै पनि आदेशात्मक शब्द प्रयोग नगर्नु
+   (जस्तै: गर्नुहोस्, तयार रहनुहोस्, प्रयास गर्नुहोस् ❌)
+4. अनुमानात्मक शैली प्रयोग गर्नु:
+   - हुन सक्छ
+   - देखिन्छ
+   - मिल्नेछ
+   - रहनेछ
+5. दोहोरिने शब्द प्रयोग नगर्नु
+6. अत्यधिक गह्रौँ संस्कृत शब्द प्रयोग नगर्नु
+7. सबै वाक्य शुद्ध देवनागरी नेपालीमा हुनुपर्छ
+8. राशिको नामपछि ":" प्रयोग गर्नु (मेष: ...)
+9. प्रत्येक राशिमा 1–2 वाक्य मात्र
+
+Source style reference:
+- Hamro Patro
+- Nepali Patro
+
+नोट:
+तिमीले तिनको शब्द copy गर्नु हुँदैन,
+तर लेख्ने शैली, भाषा र भाव मिल्नुपर्छ।
+
+Output format (JSON मात्र):
+{
+  "data": [
+    { "sign": "मेष", "prediction": "..." }
+  ]
+}
 `
     }
   ]);
