@@ -1,4 +1,8 @@
-const express = require('express');
+// const cron = require('node-cron');
+
+// cron.schedule('10 0 * * *', () => {
+//   generateDailyRasifal();
+// });const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cron = require('node-cron');
