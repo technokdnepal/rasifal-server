@@ -5,7 +5,6 @@ const cron = require('node-cron');
 const cors = require('cors');
 require('dotenv').config();
 
-// १. टाइमजोन सेटिङ
 process.env.TZ = 'Asia/Kathmandu';
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -13,7 +12,6 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-// २. Environment Variables लोड गर्ने
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -25,9 +23,10 @@ let rasifalCache = {
     source: "डेटा लोड हुँदैछ..." 
 };
 
-// ३. हाम्रो पात्रोबाट डेटा तान्ने (Scraper)
+// १. स्क्र्यापर
 async function getRawData() {
     try {
+        console.log("🌐 हाम्रो पात्रोबाट डेटा तान्दै...");
         const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
         const $ = cheerio.load(res.data);
         let content = "";
@@ -36,96 +35,90 @@ async function getRawData() {
             const desc = $(el).find('.desc').text().trim();
             if (title && desc) content += `${title}: ${desc}\n`;
         });
+        console.log("✅ स्क्र्यापिङ सफल भयो।");
         return content;
     } catch (e) {
-        console.error("Scraping error:", e.message);
+        console.error("❌ स्क्र्यापिङमा समस्या:", e.message);
         return null;
     }
 }
 
-// ४. मुख्य एआई इन्जिन (English Generation)
+// २. मुख्य एआई कार्यविधि
 async function updateRasifal() {
-    console.log("⏳ अङ्ग्रेजीमा उच्च गुणस्तरको राशिफल तयार हुँदैछ...");
     const rawData = await getRawData();
-    if (!rawData) return false;
+    if (!rawData) {
+        rasifalCache.source = "Scraping Error";
+        return false;
+    }
 
-    // अङ्ग्रेजीमा १००% शुद्ध र ६ वाक्यको नतिजाका लागि प्रम्प्ट
     const prompt = `You are a professional astrologer for technokd.com. 
-    Your job is to read the Nepali data and convert it into high-quality, professional English.
-    
-    STRICT RULES:
-    1. Write exactly 6 sentences for each zodiac sign.
-    2. The meaning must be 100% accurate based on the source.
-    3. Use professional and empathetic English tone.
-    4. Return ONLY a valid JSON object.
-    
+    TASK: Translate the following Nepali horoscope data into detailed English (6 sentences each sign).
     FORMAT: { "data": [ {"sign": "Aries", "prediction": "..."}, ... ] }
     DATA: ${rawData}`;
 
-    // ५. Gemini प्रयास (v1beta with responseMimeType Fix)
+    // Gemini प्रयास
     try {
+        console.log(`🚀 Gemini (${GEMINI_MODEL}) बाट प्रयास गर्दै...`);
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+        
         const response = await axios.post(geminiUrl, {
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { 
-                responseMimeType: "application/json" 
-            }
-        });
+            generationConfig: { responseMimeType: "application/json" }
+        }, { timeout: 30000 });
 
         const output = JSON.parse(response.data.candidates[0].content.parts[0].text);
-        if (output.data && output.data.length === 12) {
+        if (output.data) {
             rasifalCache.data = output.data;
             rasifalCache.date = new Date().toLocaleDateString('en-CA');
-            rasifalCache.source = "Google Gemini (Professional English)";
-            console.log("✅ सफल: जेमिनाईले अङ्ग्रेजी डेटा तयार गर्यो।");
+            rasifalCache.source = "Google Gemini (English)";
+            console.log("✅ सफल: जेमिनाईले अङ्ग्रेजी डेटा दियो।");
             return true;
         }
     } catch (e) {
-        console.warn("⚠️ Gemini Error:", e.response ? JSON.stringify(e.response.data) : e.message);
+        console.error("❌ Gemini Error Details:", e.response ? JSON.stringify(e.response.data) : e.message);
         
-        // ६. Groq Llama Fallback (अङ्ग्रेजीका लागि यो निकै उत्कृष्ट छ)
+        // Fallback to Groq Llama
+        console.log("🔄 अब Groq (Llama) बाट प्रयास गर्दै...");
         try {
-            console.log("🔄 Groq (Llama) बाट अङ्ग्रेजीमा डेटा लिँदै...");
             const groqRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                 model: GROQ_MODEL,
                 messages: [{ role: 'user', content: prompt }],
                 response_format: { type: "json_object" }
-            }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
+            }, { 
+                headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+                timeout: 30000 
+            });
 
             const outputJSON = JSON.parse(groqRes.data.choices[0].message.content);
             rasifalCache.data = outputJSON.data;
             rasifalCache.date = new Date().toLocaleDateString('en-CA');
-            rasifalCache.source = "Groq Llama (English Mode)";
+            rasifalCache.source = "Groq Llama (English)";
+            console.log("✅ सफल: लामाले अङ्ग्रेजी डेटा दियो।");
             return true;
         } catch (err) {
-            console.error("❌ दुवै एआई फेल भए।");
+            console.error("❌ Groq Error Details:", err.response ? JSON.stringify(err.response.data) : err.message);
+            rasifalCache.source = "एआई इन्जिन फेल भयो";
             return false;
         }
     }
 }
 
-// ७. सेड्युलर (राति १२:१०)
 cron.schedule('10 0 * * *', updateRasifal);
 
-// ८. एण्डपोइन्ट्स
 app.get('/api/rasifal', async (req, res) => {
     if (!rasifalCache.data || rasifalCache.data.length === 0) {
         await updateRasifal();
     }
-    res.json({
-        status: "SUCCESS",
-        updatedAt: rasifalCache.date,
-        engine: rasifalCache.source,
-        data: rasifalCache.data
-    });
+    res.json(rasifalCache);
 });
 
+// फोर्स अपडेट एण्डपोइन्ट
 app.get('/api/rasifal/force-update', async (req, res) => {
-    const success = await updateRasifal();
-    res.json({ status: success ? "SUCCESS" : "ERROR", engine: rasifalCache.source });
+    const result = await updateRasifal();
+    res.json({ success: result, engine: rasifalCache.source });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Server started on port ${PORT}`);
-    updateRasifal(); 
+    console.log(`🚀 सर्भर पोर्ट ${PORT} मा सुरु भयो।`);
+    updateRasifal();
 });
