@@ -10,70 +10,59 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = 'llama-3.1-8b-instant'; // तपाईँले रोज्नुभएको स्थिर मोडल
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
-let rasifalCache = { 
-    date: null, 
-    data: [], 
-    source: "Hamro Patro + Nepali Patro (AI Unique Mode)" 
-};
+let rasifalCache = { date: null, data: [], source: "AI Detailed Explanation (Eng-to-Nep)" };
 
-// राशिको नाम म्यापिङ (कन्फ्युजन हटाउन)
-const zodiacMapping = "Aries: मेष, Taurus: वृष, Gemini: मिथुन, Cancer: कर्कट, Leo: सिंह, Virgo: कन्या, Libra: तुला, Scorpio: वृश्चिक, Sagittarius: धनु, Capricorn: मकर, Aquarius: कुम्भ, Pisces: मीन";
+// राशिको नाम कन्फ्युजन नहोस् भनेर म्यापिङ
+const zodiacMap = "Aries: मेष, Taurus: वृष, Gemini: मिथुन, Cancer: कर्कट, Leo: सिंह, Virgo: कन्या, Libra: तुला, Scorpio: वृश्चिक, Sagittarius: धनु, Capricorn: मकर, Aquarius: कुम्भ, Pisces: मीन";
 
 async function getRawData() {
-    let combinedContent = "";
+    let content = "";
     try {
-        const [res1, res2] = await Promise.allSettled([
-            axios.get('https://www.hamropatro.com/rashifal', { timeout: 10000 }),
-            axios.get('https://www.nepalipatro.com.np/rashifal', { timeout: 10000 })
-        ]);
-        if (res1.status === 'fulfilled') {
-            const $ = cheerio.load(res1.value.data);
-            $('.item').each((i, el) => { combinedContent += $(el).find('.title').text() + ": " + $(el).find('.desc').text() + "\n"; });
-        }
-        if (res2.status === 'fulfilled') {
-            const $ = cheerio.load(res2.value.data);
-            $('.rashifal-item').each((i, el) => { combinedContent += $(el).find('h3').text() + ": " + $(el).find('p').text() + "\n"; });
-        }
+        const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 10000 });
+        const $ = cheerio.load(res.data);
+        $('.item').each((i, el) => {
+            content += $(el).find('.title').text() + ": " + $(el).find('.desc').text() + "\n";
+        });
     } catch (e) { console.error("Scraping Error:", e.message); }
-    return combinedContent;
+    return content;
 }
 
 async function updateRasifal() {
-    console.log("⏳ अङ्ग्रेजी ड्राफ्ट र नेपाली अनुवाद प्रक्रिया सुरु भयो...");
+    console.log("⏳ अङ्ग्रेजीमा व्याख्या र नेपाली अनुवाद सुरु हुँदैछ...");
     const rawData = await getRawData();
     if (!rawData || rawData.length < 100) return false;
 
-    // तपाईँको नयाँ आइडिया अनुसारको प्रम्प्ट
     const prompt = `
-    You are a Professional Astrologer and Translator.
+    You are an expert Astrologer and Language Specialist.
     
-    STEP 1: Analyze the raw Nepali horoscope data provided below.
-    STEP 2: Write a unique, creative, and professional version of all 12 horoscopes in ENGLISH first (this prevents copying).
-    STEP 3: Translate that English version into high-quality, Traditional Nepali (ट्रेडिसनल नेपाली).
+    TASK:
+    1. Read the raw Nepali horoscope data provided below.
+    2. Understand the meaning in English.
+    3. Write a 5 to 6 sentence detailed explanation for each zodiac sign in ENGLISH. This expansion is mandatory to make the content unique.
+    4. Translate these 5-6 original English sentences into high-quality, traditional Nepali (ट्रेडिसनल नेपाली).
     
-    STRICT RULES:
-    1. Do NOT use Romanized Nepali (e.g., 'Aaja ko din' is bad). Use 'आजको दिन' (Traditional).
-    2. Use this mapping for Zodiac Signs: ${zodiacMapping}.
-    3. Ensure 100% correct grammar and spelling.
-    4. Each horoscope must be original and not a word-for-word copy of the source.
+    RULES:
+    - Strictly use 5-6 sentences per sign.
+    - Zodiac Mapping: ${zodiacMap}.
+    - No Romanized Nepali. Use pure Nepali script.
+    - Focus on grammar and professional tone.
     
-    JSON OUTPUT FORMAT:
+    OUTPUT FORMAT:
     { "data": [ {"sign": "मेष", "prediction": "..."}, ... ] }
 
-    SOURCE DATA:
+    RAW DATA:
     ${rawData}
     `;
 
     try {
-        const response = await axios.post(
-            'https://api.groq.com/openai/v1/chat/completions',
+        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions',
             {
                 model: GROQ_MODEL,
                 messages: [{ role: 'user', content: prompt }],
                 response_format: { type: "json_object" },
-                temperature: 0.7 
+                temperature: 0.7
             },
             { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } }
         );
@@ -82,30 +71,21 @@ async function updateRasifal() {
         if (aiOutput.data && aiOutput.data.length > 0) {
             rasifalCache.data = aiOutput.data;
             rasifalCache.date = new Date().toISOString().split('T')[0];
-            console.log("✅ अङ्ग्रेजी-टू-नेपाली राशिफल सफलतापूर्वक तयार भयो।");
             return true;
         }
-    } catch (e) { 
-        console.error("AI Update Error:", e.message);
-        return false; 
-    }
+    } catch (e) { return false; }
 }
 
 cron.schedule('10 0 * * *', updateRasifal);
 
 app.get('/api/rasifal', async (req, res) => {
     if (!rasifalCache.data || rasifalCache.data.length === 0) await updateRasifal();
-    res.json({
-        status: "SUCCESS",
-        updatedAt: rasifalCache.date,
-        source: rasifalCache.source,
-        data: rasifalCache.data
-    });
+    res.json({ status: "SUCCESS", updatedAt: rasifalCache.date, data: rasifalCache.data });
 });
 
 app.get('/api/rasifal/force-update', async (req, res) => {
     const success = await updateRasifal();
-    res.json({ status: success ? "SUCCESS" : "ERROR", message: success ? "Updated" : "Failed" });
+    res.json({ status: success ? "SUCCESS" : "ERROR" });
 });
 
 app.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
