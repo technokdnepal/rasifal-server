@@ -22,7 +22,7 @@ let rasifalCache = {
     lastChecked: null
 };
 
-// १. अङ्ग्रेजी स्रोतहरूबाट डेटा रिडिङ - मिति तान्ने लजिक सुधारिएको छ
+// १. अङ्ग्रेजी स्रोतबाट डेटा तान्ने -
 async function fetchEnglishSource() {
     const config = {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
@@ -32,12 +32,9 @@ async function fetchEnglishSource() {
         const res = await axios.get('https://english.hamropatro.com/rashifal', config);
         const $ = cheerio.load(res.data);
         
-        // "Today" मात्र नभई वास्तविक मिति तान्ने प्रयास
-        let dateTitle = $('.articleTitle.fullWidth h2').first().text().trim() || 
-                        $('.pDate').first().text().trim();
-        
-        // यदि वेबसाइटबाट मिति आएन भने आजको अंग्रेजी मिति राख्ने
-        if (!dateTitle || dateTitle.toLowerCase() === 'today') {
+        // मिति तान्ने लजिक: "May" लाई "मेज" हुनबाट जोगाउन सिधै अङ्ग्रेजी नै राख्ने
+        let dateTitle = $('.articleTitle.fullWidth h2').first().text().trim();
+        if (!dateTitle || dateTitle.toLowerCase().includes('today')) {
             dateTitle = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         }
 
@@ -48,37 +45,37 @@ async function fetchEnglishSource() {
         }
 
         const resBackup = await axios.get('https://nepalipatro.com.np/en/nepali-rashifal', config);
-        const $b = cheerio.load(resBackup.data);
-        const bText = $('body').text().replace(/\s+/g, ' ').trim();
-        return { date: dateTitle, text: bText.substring(0, 8000), site: "Nepali Patro (EN)" };
+        return { date: dateTitle, text: $('body').text().substring(0, 5000), site: "Nepali Patro (EN)" };
     } catch (e) { return null; }
 }
 
-// २. एआईलाई ४-५ वाक्य पुर्याउन र सिधै सुरु गर्न कडा निर्देशन
+// २. अङ्ग्रेजीमा प्रोसेस गर्ने र रङ/अङ्क छुट्ट्याउने -
 async function processRasifal() {
     const source = await fetchEnglishSource();
     if (!source || source.text.length < 500) return false;
 
-    // CRITICAL RULES: वाक्य संख्या र व्याख्याको गहिराइ थपिएको छ
-    const prompt = `You are a professional Vedic Astrologer. Read this English text: "${source.text}".
+    // कडा निर्देशन: अङ्ग्रेजी भाषा र छुट्टै JSON फिल्डहरू
+    const prompt = `You are a professional Vedic Astrologer. Analyze: "${source.text}".
     
-    STRICT AND CRITICAL RULES:
-    1. START DIRECTLY: No introductory phrases like "Individuals born under...", "For Aries today...", or "Today brings...". Start with the core prediction immediately.
-    2. MINIMUM LENGTH: Every sign's prediction MUST be at least 4 to 5 long sentences. If the source text is short, EXPAND and explain the meaning using your astrological expertise to reach this length.
-    3. NO LABELS: Do not include the sign name inside the prediction text.
-    4. CELESTIAL ALIGNMENT: Ignore any lucky color or number in the source text. Instead, CALCULATE a UNIQUE Lucky Color and Lucky Number for each sign based on planetary transits (Sun, Moon, Mars, Jupiter) specifically for the date: ${source.date}. Use standard color names (e.g., Navy Blue, Deep Red).
-    5. LANGUAGE: Professional English.
-    6. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
+    STRICT COMMANDS:
+    1. LANGUAGE: All "prediction" text MUST be in PROFESSIONAL ENGLISH. No Nepali/Hindi.
+    2. START DIRECTLY: No intro phrases. No "Aries born people..." etc.
+    3. SENTENCE COUNT: Exactly 4 to 5 long sentences per sign. Expand the meaning to reach this length.
+    4. SEPARATE FIELDS: Put "lucky_color" and "lucky_number" in their OWN JSON keys. 
+    5. NO DATA IN TEXT: Do NOT mention color or number inside the "prediction" text string.
+    6. CELESTIAL ANALYSIS: Calculate UNIQUE color/number based on planetary positions for ${source.date}.
+    7. CORRECT SPELLING: Scorpio must be 'वृश्चिक'.
+    8. NO SIGN NAMES: Do not include Aries, Taurus, etc. inside the prediction text.
 
-    JSON STRUCTURE:
+    JSON FORMAT:
     {
       "date_np": "${source.date}",
       "data": [
         {
           "sign": "Aries",
           "sign_np": "मेष",
-          "prediction": "Exactly 4-5 detailed sentences explaining the outlook...",
-          "lucky_color": "Color Name",
+          "prediction": "4-5 professional English sentences...",
+          "lucky_color": "Standard Color Name",
           "lucky_number": "Number"
         }
       ]
@@ -102,7 +99,7 @@ async function processRasifal() {
     } catch (err) { return false; }
 }
 
-// ३. राती १२:०५ बाट स्मार्ट अपडेट
+// ३. स्वचालित सेड्युलर र रुटहरू
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchEnglishSource();
     if (source && source.date !== rasifalCache.date_np) { await processRasifal(); }
