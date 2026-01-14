@@ -22,6 +22,7 @@ let rasifalCache = {
     lastChecked: null
 };
 
+// १. अङ्ग्रेजी स्रोतहरूबाट डेटा रिडिङ - मिति तान्ने लजिक सुधारिएको छ
 async function fetchEnglishSource() {
     const config = {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
@@ -30,11 +31,16 @@ async function fetchEnglishSource() {
     try {
         const res = await axios.get('https://english.hamropatro.com/rashifal', config);
         const $ = cheerio.load(res.data);
-        // मिति तान्ने अझ भरपर्दो तरिका
-        const dateTitle = $('.articleTitle.fullWidth h2').first().text().trim() || 
-                          $('.pDate').first().text().trim() || 
-                          new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         
+        // "Today" मात्र नभई वास्तविक मिति तान्ने प्रयास
+        let dateTitle = $('.articleTitle.fullWidth h2').first().text().trim() || 
+                        $('.pDate').first().text().trim();
+        
+        // यदि वेबसाइटबाट मिति आएन भने आजको अंग्रेजी मिति राख्ने
+        if (!dateTitle || dateTitle.toLowerCase() === 'today') {
+            dateTitle = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        }
+
         const mainText = $('.desc-card, .item').text().replace(/\s+/g, ' ').trim();
         
         if (mainText.length > 500) {
@@ -48,28 +54,30 @@ async function fetchEnglishSource() {
     } catch (e) { return null; }
 }
 
+// २. एआईलाई ४-५ वाक्य पुर्याउन र सिधै सुरु गर्न कडा निर्देशन
 async function processRasifal() {
     const source = await fetchEnglishSource();
     if (!source || source.text.length < 500) return false;
 
-    const prompt = `You are a professional Vedic Astrologer. Analyze this text: "${source.text}".
+    // CRITICAL RULES: वाक्य संख्या र व्याख्याको गहिराइ थपिएको छ
+    const prompt = `You are a professional Vedic Astrologer. Read this English text: "${source.text}".
     
-    CRITICAL RULES (Failure to follow will break the system):
-    1. START DIRECTLY: No "Individuals born under..." or intro phrases. Start with the core prediction.
-    2. MINIMUM LENGTH: Every sign's prediction MUST be at least 4 long sentences. If the source is short, EXPAND the meaning using your astrological knowledge to reach 4-5 sentences.
-    3. NO LABELS: Do not include sign names (Aries, मेष) inside the prediction.
-    4. CELESTIAL COLORS & NUMBERS: Ignore the source. Calculate UNIQUE lucky colors and numbers based on planetary transits for ${source.date}. Use standard color names (e.g., Deep Red, Navy Blue).
-    5. CORRECT SPELLING: Scorpio must be 'वृश्चिक'.
-    6. DATE: Use the exact date: "${source.date}".
+    STRICT AND CRITICAL RULES:
+    1. START DIRECTLY: No introductory phrases like "Individuals born under...", "For Aries today...", or "Today brings...". Start with the core prediction immediately.
+    2. MINIMUM LENGTH: Every sign's prediction MUST be at least 4 to 5 long sentences. If the source text is short, EXPAND and explain the meaning using your astrological expertise to reach this length.
+    3. NO LABELS: Do not include the sign name inside the prediction text.
+    4. CELESTIAL ALIGNMENT: Ignore any lucky color or number in the source text. Instead, CALCULATE a UNIQUE Lucky Color and Lucky Number for each sign based on planetary transits (Sun, Moon, Mars, Jupiter) specifically for the date: ${source.date}. Use standard color names (e.g., Navy Blue, Deep Red).
+    5. LANGUAGE: Professional English.
+    6. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
 
     JSON STRUCTURE:
     {
-      "date_np": "...",
+      "date_np": "${source.date}",
       "data": [
         {
           "sign": "Aries",
           "sign_np": "मेष",
-          "prediction": "4 to 5 detailed sentences explaining the daily outlook...",
+          "prediction": "Exactly 4-5 detailed sentences explaining the outlook...",
           "lucky_color": "Color Name",
           "lucky_number": "Number"
         }
@@ -94,6 +102,7 @@ async function processRasifal() {
     } catch (err) { return false; }
 }
 
+// ३. राती १२:०५ बाट स्मार्ट अपडेट
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchEnglishSource();
     if (source && source.date !== rasifalCache.date_np) { await processRasifal(); }
