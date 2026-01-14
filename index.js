@@ -22,15 +22,13 @@ let rasifalCache = {
     lastChecked: null
 };
 
-// १. अङ्ग्रेजी वेबसाइटहरूबाट डेटा रिडिङ गर्ने -
+// १. अङ्ग्रेजी स्रोतहरूबाट डेटा रिडिङ -
 async function fetchEnglishSource() {
     const config = {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
         timeout: 20000
     };
-    
     try {
-        // प्राइमरी: इङ्ग्लिस हाम्रो पात्रो -
         const res = await axios.get('https://english.hamropatro.com/rashifal', config);
         const $ = cheerio.load(res.data);
         const dateTitle = $('.articleTitle.fullWidth h2').first().text().trim();
@@ -40,29 +38,28 @@ async function fetchEnglishSource() {
             return { date: dateTitle || "Today", text: mainText, site: "Hamro Patro (EN)" };
         }
 
-        // ब्याकअप: इङ्ग्लिस नेपाली पात्रो -
         const resBackup = await axios.get('https://nepalipatro.com.np/en/nepali-rashifal', config);
         const $b = cheerio.load(resBackup.data);
         const bText = $('body').text().replace(/\s+/g, ' ').trim();
         return { date: "Today", text: bText.substring(0, 8000), site: "Nepali Patro (EN)" };
-    } catch (e) {
-        return null;
-    }
+    } catch (e) { return null; }
 }
 
-// २. अङ्ग्रेजी डेटालाई ५-६ वाक्यमा व्याख्या गर्ने -
+// २. एआईलाई सिधै र छोटो बनाउन कडा निर्देशन -
 async function processRasifal() {
     const source = await fetchEnglishSource();
     if (!source || source.text.length < 500) return false;
 
-    const prompt = `You are a professional Astrologer. Read this English horoscope text: "${source.text}".
+    const prompt = `You are a concise Vedic Astrologer. Read this English text: "${source.text}".
     
-    INSTRUCTIONS:
-    1. For each sign, EXPLAIN the prediction in EXACTLY 5 to 6 professional English sentences. (Maximum 6).
-    2. Extract/Calculate Lucky Color and Lucky Number based on celestial positions for today. 
-    3. Return these as SEPARATE JSON fields, NOT inside the prediction text.
-    4. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
-    5. Do NOT include syllables like 'चु, चे, चो'.
+    STRICT RULES:
+    1. START DIRECTLY: Do NOT use introductory phrases like "Individuals born under...", "For Aries today...", or "Today brings...". 
+    2. Start the prediction with the core action or outcome immediately (e.g., "Expect significant success after a period of struggle.").
+    3. LENGTH: Exactly 4 to 5 sentences per sign.
+    4. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
+    5. LANGUAGE: Professional English.
+    6. SEPARATE FIELDS: Lucky Color and Number must be in their own fields based on celestial alignment.
+    7. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
 
     JSON STRUCTURE:
     {
@@ -71,7 +68,7 @@ async function processRasifal() {
         {
           "sign": "Aries",
           "sign_np": "मेष",
-          "prediction": "5-6 sentences of explanation in English...",
+          "prediction": "Direct 4-5 sentences only...",
           "lucky_color": "Color Name",
           "lucky_number": "Number"
         }
@@ -93,26 +90,19 @@ async function processRasifal() {
         rasifalCache.lastChecked = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' });
         
         return true;
-    } catch (err) {
-        return false;
-    }
+    } catch (err) { return false; }
 }
 
 // ३. राती १२:०५ बाट स्मार्ट अपडेट -
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchEnglishSource();
-    if (source && source.date !== rasifalCache.date_np) {
-        await processRasifal();
-    }
+    if (source && source.date !== rasifalCache.date_np) { await processRasifal(); }
 });
 
 app.get('/api/rasifal', (req, res) => res.json(rasifalCache));
-
 app.get('/api/rasifal/force-update', async (req, res) => {
     const result = await processRasifal();
     res.json({ success: result, date: rasifalCache.date_np });
 });
 
-app.listen(PORT, () => {
-    processRasifal();
-});
+app.listen(PORT, () => { processRasifal(); });
