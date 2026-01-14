@@ -22,7 +22,6 @@ let rasifalCache = {
     lastChecked: null
 };
 
-// १. अङ्ग्रेजी स्रोतहरूबाट डेटा रिडिङ
 async function fetchEnglishSource() {
     const config = {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
@@ -31,47 +30,48 @@ async function fetchEnglishSource() {
     try {
         const res = await axios.get('https://english.hamropatro.com/rashifal', config);
         const $ = cheerio.load(res.data);
-        const dateTitle = $('.articleTitle.fullWidth h2').first().text().trim();
+        // मिति तान्ने अझ भरपर्दो तरिका
+        const dateTitle = $('.articleTitle.fullWidth h2').first().text().trim() || 
+                          $('.pDate').first().text().trim() || 
+                          new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        
         const mainText = $('.desc-card, .item').text().replace(/\s+/g, ' ').trim();
         
         if (mainText.length > 500) {
-            return { date: dateTitle || "Today", text: mainText, site: "Hamro Patro (EN)" };
+            return { date: dateTitle, text: mainText, site: "Hamro Patro (EN)" };
         }
 
         const resBackup = await axios.get('https://nepalipatro.com.np/en/nepali-rashifal', config);
         const $b = cheerio.load(resBackup.data);
         const bText = $('body').text().replace(/\s+/g, ' ').trim();
-        return { date: "Today", text: bText.substring(0, 8000), site: "Nepali Patro (EN)" };
+        return { date: dateTitle, text: bText.substring(0, 8000), site: "Nepali Patro (EN)" };
     } catch (e) { return null; }
 }
 
-// २. ग्रह र नक्षत्रको गोचर विश्लेषण थपिएको प्रम्प्ट
 async function processRasifal() {
     const source = await fetchEnglishSource();
     if (!source || source.text.length < 500) return false;
 
-    // निर्देशन: आजको मितिको ग्रह गोचर (Planetary Transits) विश्लेषण गर्न कडा निर्देशन थपिएको छ
-    const prompt = `You are a professional Vedic Astrologer. Read this English text: "${source.text}".
+    const prompt = `You are a professional Vedic Astrologer. Analyze this text: "${source.text}".
     
-    STRICT RULES:
-    1. START DIRECTLY: Do NOT use introductory phrases like "Individuals born under...", "For Aries today...", or "Today brings...". 
-    2. Start the prediction with the core action or outcome immediately.
-    3. LENGTH: Exactly 4 to 5 sentences per sign.
-    4. NO LABELS: Do not include the sign name inside the prediction text.
-    5. CELESTIAL ALIGNMENT: Ignore any lucky color or number in the source text. Instead, CALCULATE a UNIQUE Lucky Color and Lucky Number for each sign by analyzing today's planetary transits (Sun, Moon, and planets) specifically for the date: ${source.date}.
-    6. LANGUAGE: Professional English.
-    7. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
+    CRITICAL RULES (Failure to follow will break the system):
+    1. START DIRECTLY: No "Individuals born under..." or intro phrases. Start with the core prediction.
+    2. MINIMUM LENGTH: Every sign's prediction MUST be at least 4 long sentences. If the source is short, EXPAND the meaning using your astrological knowledge to reach 4-5 sentences.
+    3. NO LABELS: Do not include sign names (Aries, मेष) inside the prediction.
+    4. CELESTIAL COLORS & NUMBERS: Ignore the source. Calculate UNIQUE lucky colors and numbers based on planetary transits for ${source.date}. Use standard color names (e.g., Deep Red, Navy Blue).
+    5. CORRECT SPELLING: Scorpio must be 'वृश्चिक'.
+    6. DATE: Use the exact date: "${source.date}".
 
     JSON STRUCTURE:
     {
-      "date_np": "${source.date}",
+      "date_np": "...",
       "data": [
         {
           "sign": "Aries",
           "sign_np": "मेष",
-          "prediction": "Direct 4-5 sentences only...",
-          "lucky_color": "Celestial Color Name",
-          "lucky_number": "Celestial Number"
+          "prediction": "4 to 5 detailed sentences explaining the daily outlook...",
+          "lucky_color": "Color Name",
+          "lucky_number": "Number"
         }
       ]
     }`;
@@ -94,7 +94,6 @@ async function processRasifal() {
     } catch (err) { return false; }
 }
 
-// ३. राती १२:०५ बाट स्मार्ट अपडेट
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchEnglishSource();
     if (source && source.date !== rasifalCache.date_np) { await processRasifal(); }
