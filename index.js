@@ -29,18 +29,26 @@ let rasifalCache = {
 -------------------------------------------------- */
 async function fetchOfficialNepaliDate() {
   try {
-    const res = await axios.get('https://www.hamropatro.com/rashifal', { timeout: 15000 });
-    const $ = cheerio.load(res.data);
+    const res = await axios.get('https://hamropatro.com/rashifal', {
+      timeout: 15000,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      }
+    });
 
-    // बलियो लजिक: क्लास प्रयोग गरेर मिति तान्ने -
-    const dateText = $('.articleTitle.fullWidth h2').first().text().trim() || 
-                     $('h2:contains("आज")').text().trim();
+    const html = res.data;
 
-    if (dateText) return dateText;
-    console.error("❌ मिति भेटिएन: Selector मिलेन");
+    // Regex-based extraction (HTML structure change safe)
+    const match = html.match(/आज\s*-\s*[०-९]+\s*[^\s]+\s*[०-९]{4}\s*[^\s<]+/);
+
+    if (match && match[0]) {
+      return match[0].trim();
+    }
+
     return null;
   } catch (err) {
-    console.error("❌ नेपाली मिति तान्न सकिएन:", err.message);
+    console.error('Nepali date fetch failed');
     return null;
   }
 }
