@@ -22,7 +22,7 @@ let rasifalCache = {
     lastChecked: null
 };
 
-// १. अङ्ग्रेजी स्रोतहरूबाट डेटा रिडिङ -
+// १. अङ्ग्रेजी स्रोतहरूबाट डेटा रिडिङ
 async function fetchEnglishSource() {
     const config = {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
@@ -45,21 +45,22 @@ async function fetchEnglishSource() {
     } catch (e) { return null; }
 }
 
-// २. ग्रह र नक्षत्रको आधारमा रङ र अङ्क निकाल्ने -
+// २. ग्रह र नक्षत्रको गोचर विश्लेषण थपिएको प्रम्प्ट
 async function processRasifal() {
     const source = await fetchEnglishSource();
     if (!source || source.text.length < 500) return false;
 
-    // कडा निर्देशन: स्रोतको रङ/अङ्क कपी नगर्ने, ग्रहदशा हेरेर नयाँ निकाल्ने -
-    const prompt = `You are a Vedic Astrologer. Analyze the text: "${source.text}".
+    // निर्देशन: आजको मितिको ग्रह गोचर (Planetary Transits) विश्लेषण गर्न कडा निर्देशन थपिएको छ
+    const prompt = `You are a professional Vedic Astrologer. Read this English text: "${source.text}".
     
-    STRICT REQUIREMENTS:
-    1. START DIRECTLY: No "Individuals born under..." or "Today is...". Start with the core prediction immediately.
-    2. LENGTH: Exactly 4 to 5 sentences per sign.
-    3. CELESTIAL ALIGNMENT: Ignore ANY lucky color or number mentioned in the source text.
-    4. CALCULATE: Determine a UNIQUE Lucky Color and Lucky Number for each sign by analyzing today's planetary transits (Sun, Moon, Mars, Jupiter, etc.) for ${source.date}.
-    5. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
-    6. Return ONLY JSON. Do NOT include sign names inside prediction text.
+    STRICT RULES:
+    1. START DIRECTLY: Do NOT use introductory phrases like "Individuals born under...", "For Aries today...", or "Today brings...". 
+    2. Start the prediction with the core action or outcome immediately.
+    3. LENGTH: Exactly 4 to 5 sentences per sign.
+    4. NO LABELS: Do not include the sign name inside the prediction text.
+    5. CELESTIAL ALIGNMENT: Ignore any lucky color or number in the source text. Instead, CALCULATE a UNIQUE Lucky Color and Lucky Number for each sign by analyzing today's planetary transits (Sun, Moon, and planets) specifically for the date: ${source.date}.
+    6. LANGUAGE: Professional English.
+    7. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
 
     JSON STRUCTURE:
     {
@@ -68,7 +69,7 @@ async function processRasifal() {
         {
           "sign": "Aries",
           "sign_np": "मेष",
-          "prediction": "Direct prediction text here...",
+          "prediction": "Direct 4-5 sentences only...",
           "lucky_color": "Celestial Color Name",
           "lucky_number": "Celestial Number"
         }
@@ -86,13 +87,14 @@ async function processRasifal() {
         
         rasifalCache.date_np = outputJSON.date_np;
         rasifalCache.data = outputJSON.data;
-        rasifalCache.source = `Groq Astrology Engine (Celestial Data)`;
+        rasifalCache.source = `Groq Astrology (${source.site})`;
         rasifalCache.lastChecked = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' });
         
         return true;
     } catch (err) { return false; }
 }
 
+// ३. राती १२:०५ बाट स्मार्ट अपडेट
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchEnglishSource();
     if (source && source.date !== rasifalCache.date_np) { await processRasifal(); }
