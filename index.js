@@ -26,7 +26,7 @@ let rasifalCache = {
 // १. वेबसाइटबाट नयाँ मिति र टेक्स्ट पढ्ने -
 async function fetchSourceData() {
     const config = {
-        headers: { 'User-Agent': 'Mozilla/5.0...' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
         timeout: 20000
     };
     
@@ -34,36 +34,34 @@ async function fetchSourceData() {
         const res = await axios.get('https://www.hamropatro.com/rashifal', config);
         const $ = cheerio.load(res.data);
         
-        // तपाईँले भन्नुभएको "आज - ०१ माघ..." भन्ने मिति तान्ने -
-        const dateString = $('.articleTitle.fullWidth h2').text().trim(); 
+        // वेबसाइटको प्रस्ट मिति शीर्षक तान्ने (जस्तै: "आज - ०१ माघ २०८२ बिहीबार")
+        const dateString = $('.articleTitle.fullWidth h2').first().text().trim(); 
         const mainText = $('.desc-card, .item').text().replace(/\s+/g, ' ').trim();
         
         return { 
-            dateFromWeb: dateString || new Date().toLocaleDateString('ne-NP'), 
+            dateFromWeb: dateString || "माघ १, २०८२", 
             text: mainText,
             source: "Hamro Patro"
         };
     } catch (e) {
+        console.error("Scraping Error:", e.message);
         return null;
     }
 }
 
-// २. एआई (Groq) प्रयोग गरेर राशिफल तयार पार्ने -
+// २. एआई (Groq) प्रयोग गरेर विस्तृत राशिफल तयार पार्ने
 async function processRasifal() {
-    console.log("⏳ नयाँ डेटा फेला पर्यो, एआईले प्रोसेस गर्दैछ...");
+    console.log("⏳ डेटा प्रोसेस हुँदैछ (रङ र अङ्क छुट्ट्याउँदै)...");
     const source = await fetchSourceData();
     if (!source || source.text.length < 500) return false;
 
-    // अङ्ग्रेजीमा एक्सप्लेन गर्ने र अक्षरहरू (Syllables) थप्ने कडा निर्देशन -
-    const prompt = `You are a professional astrologer. Extract daily horoscopes from this text: ${source.text}.
+    // रङ र अङ्क छुट्टै फिल्डमा राख्न कडा निर्देशन -
+    const prompt = `You are a professional Vedic Astrologer. Using the text: "${source.text}", create a daily horoscope.
     
     STRICT RULES:
     1. Language: Professional English.
-    2. Format: Return ONLY JSON.
-    3. Syllables: Include Nepali syllables (e.g., चु, चे, चो...) for each sign.
-    4. Quality: Write exactly 6 sentences for each prediction.
-    
-    JSON STRUCTURE:
+    2. CORRECT SPELLING: Always use 'वृश्चिक' for Scorpio (NOT बृश्चिक).
+    3. JSON STRUCTURE IS MANDATORY: You must return exactly this structure:
     {
       "date_np": "${source.dateFromWeb}",
       "data": [
@@ -71,9 +69,10 @@ async function processRasifal() {
           "sign": "Aries",
           "sign_np": "मेष",
           "syllables": "चु, चे, चो, ला, लि, लु, ले, लो, अ",
-          "prediction": "..."
-        },
-        ... (all 12 signs)
+          "prediction": "Exactly 6 professional sentences here.",
+          "lucky_color": "Specific Color Name",
+          "lucky_number": "Specific Number"
+        }
       ]
     }`;
 
@@ -86,13 +85,13 @@ async function processRasifal() {
 
         const outputJSON = JSON.parse(groqRes.data.choices[0].message.content);
         
-        // क्यास अपडेट गर्ने -
+        // क्यास अपडेट -
         rasifalCache.date_np = outputJSON.date_np;
         rasifalCache.data = outputJSON.data;
         rasifalCache.source = `Groq Llama (${source.source})`;
-        rasifalCache.lastChecked = new Date().toLocaleString();
+        rasifalCache.lastChecked = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' });
         
-        console.log(`✅ सफलता: ${outputJSON.date_np} को राशिफल अपडेट भयो।`);
+        console.log(`✅ सफलता: ${outputJSON.date_np} को डेटा रङ र अङ्कसहित अपडेट भयो।`);
         return true;
     } catch (err) {
         console.error("❌ एआई इरोर:", err.message);
@@ -100,25 +99,23 @@ async function processRasifal() {
     }
 }
 
-// ३. 'Smart Polling' - राती १२:०५ बाट हरेक १५ मिनेटमा चेक गर्ने -
+// ३. राती १२:०५ बाट हरेक १५ मिनेटमा स्वचालित चेक -
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchSourceData();
     if (source && source.dateFromWeb !== rasifalCache.date_np) {
         await processRasifal();
-    } else {
-        console.log("😴 नयाँ अपडेट अझै आएको छैन, प्रतिक्षा गर्दै...");
     }
 });
 
-// ४. एपीआई रुटहरू -
+// ४. एपीआई रुटहरू
 app.get('/api/rasifal', (req, res) => res.json(rasifalCache));
 
 app.get('/api/rasifal/force-update', async (req, res) => {
     const result = await processRasifal();
-    res.json({ success: result, current_date: rasifalCache.date_np });
+    res.json({ success: result, date: rasifalCache.date_np });
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 सर्भर सञ्चालनमा छ। बन्दरगाह: ${PORT}`);
+    console.log(`🚀 Server on port ${PORT}.`);
     processRasifal(); // सुरुमा एक पटक डेटा तान्ने
 });
