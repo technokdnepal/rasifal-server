@@ -1,7 +1,8 @@
 {
   "name": "rasifal-server",
   "version": "1.0.0",
-  "description": "Daily Rasifal API Server",
+  "private": true,
+  "description": "Daily Nepali Rasifal API Server",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
