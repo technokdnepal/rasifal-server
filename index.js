@@ -45,21 +45,21 @@ async function fetchEnglishSource() {
     } catch (e) { return null; }
 }
 
-// २. एआईलाई सिधै र छोटो बनाउन कडा निर्देशन -
+// २. ग्रह र नक्षत्रको आधारमा रङ र अङ्क निकाल्ने -
 async function processRasifal() {
     const source = await fetchEnglishSource();
     if (!source || source.text.length < 500) return false;
 
-    const prompt = `You are a concise Vedic Astrologer. Read this English text: "${source.text}".
+    // कडा निर्देशन: स्रोतको रङ/अङ्क कपी नगर्ने, ग्रहदशा हेरेर नयाँ निकाल्ने -
+    const prompt = `You are a Vedic Astrologer. Analyze the text: "${source.text}".
     
-    STRICT RULES:
-    1. START DIRECTLY: Do NOT use introductory phrases like "Individuals born under...", "For Aries today...", or "Today brings...". 
-    2. Start the prediction with the core action or outcome immediately (e.g., "Expect significant success after a period of struggle.").
-    3. LENGTH: Exactly 4 to 5 sentences per sign.
-    4. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
-    5. LANGUAGE: Professional English.
-    6. SEPARATE FIELDS: Lucky Color and Number must be in their own fields based on celestial alignment.
-    7. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
+    STRICT REQUIREMENTS:
+    1. START DIRECTLY: No "Individuals born under..." or "Today is...". Start with the core prediction immediately.
+    2. LENGTH: Exactly 4 to 5 sentences per sign.
+    3. CELESTIAL ALIGNMENT: Ignore ANY lucky color or number mentioned in the source text.
+    4. CALCULATE: Determine a UNIQUE Lucky Color and Lucky Number for each sign by analyzing today's planetary transits (Sun, Moon, Mars, Jupiter, etc.) for ${source.date}.
+    5. Correct Nepali spelling for Scorpio is 'वृश्चिक'.
+    6. Return ONLY JSON. Do NOT include sign names inside prediction text.
 
     JSON STRUCTURE:
     {
@@ -68,9 +68,9 @@ async function processRasifal() {
         {
           "sign": "Aries",
           "sign_np": "मेष",
-          "prediction": "Direct 4-5 sentences only...",
-          "lucky_color": "Color Name",
-          "lucky_number": "Number"
+          "prediction": "Direct prediction text here...",
+          "lucky_color": "Celestial Color Name",
+          "lucky_number": "Celestial Number"
         }
       ]
     }`;
@@ -86,14 +86,13 @@ async function processRasifal() {
         
         rasifalCache.date_np = outputJSON.date_np;
         rasifalCache.data = outputJSON.data;
-        rasifalCache.source = `Groq Astrology (${source.site})`;
+        rasifalCache.source = `Groq Astrology Engine (Celestial Data)`;
         rasifalCache.lastChecked = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kathmandu' });
         
         return true;
     } catch (err) { return false; }
 }
 
-// ३. राती १२:०५ बाट स्मार्ट अपडेट -
 cron.schedule('*/15 0-10 * * *', async () => {
     const source = await fetchEnglishSource();
     if (source && source.date !== rasifalCache.date_np) { await processRasifal(); }
