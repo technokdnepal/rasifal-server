@@ -56,24 +56,24 @@ async function fetchOfficialNepaliDate() {
 /* --------------------------------------------------
    2. Fetch English Horoscope Text
 -------------------------------------------------- */
-async function fetchEnglishSource() {
-  try {
-    const res = await axios.get('https://english.hamropatro.com/rashifal', { timeout: 20000 });
-    const $ = cheerio.load(res.data);
-    const text = $('.desc-card, .item, body').text().replace(/\s+/g, ' ').trim();
+const NepaliDate = require('nepali-date-converter');
 
-    if (text.length > 800) {
-      return { text, site: 'Hamro Patro EN' };
-    }
+function getOfficialNepaliDate() {
+  const nd = new NepaliDate(new Date());
 
-    console.log("⚠️ अंग्रेजी हाम्रो पात्रोमा डेटा कम छ, ब्याकअप प्रयोग गर्दै...");
-    const backup = await axios.get('https://nepalipatro.com.np/en/nepali-rashifal', { timeout: 20000 });
-    const $b = cheerio.load(backup.data);
-    return { text: $b('body').text().substring(0, 6000), site: 'Nepali Patro EN' };
-  } catch (err) {
-    console.error("❌ अंग्रेजी स्रोत तान्न सकिएन:", err.message);
-    return null;
-  }
+  const nepaliDays = [
+    'आइतबार','सोमबार','मंगलबार','बुधबार',
+    'बिहीबार','शुक्रबार','शनिबार'
+  ];
+
+  const nepaliMonths = [
+    'बैशाख','जेठ','असार','साउन','भदौ','असोज',
+    'कात्तिक','मंसिर','पुष','माघ','फागुन','चैत'
+  ];
+
+  const day = nepaliDays[new Date().getDay()];
+
+  return `आज - ${nd.getDate()} ${nepaliMonths[nd.getMonth()]} ${nd.getYear()} ${day}`;
 }
 
 /* --------------------------------------------------
