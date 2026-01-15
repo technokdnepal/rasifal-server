@@ -3,6 +3,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
 const cors = require("cors");
+const moment = require("moment-timezone");  // ✅ ADDED
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -40,6 +41,27 @@ const SIGNS = [
   { en: "Pisces", np: "मीन" }
 ];
 
+// ✅ ADDED - Nepal current date/time helper
+function getNepalDateTime() {
+  const nepalNow = moment().tz("Asia/Kathmandu");
+  const dayNames = {
+    'Sunday': 'आइतबार',
+    'Monday': 'सोमबार',
+    'Tuesday': 'मङ्गलबार',
+    'Wednesday': 'बुधबार',
+    'Thursday': 'बिहिबार',
+    'Friday': 'शुक्रबार',
+    'Saturday': 'शनिबार'
+  };
+  
+  return {
+    dateAD: nepalNow.format('YYYY-MM-DD'),
+    dayName: dayNames[nepalNow.format('dddd')],
+    time: nepalNow.format('HH:mm:ss'),
+    timestamp: nepalNow.valueOf()
+  };
+}
+
 async function fetchHamroPatroNepali() {
   try {
     const res = await axios.get("https://www.hamropatro.com/rashifal", {
@@ -67,7 +89,16 @@ async function generateRasifal() {
   const source = await fetchHamroPatroNepali();
   if (!source) return false;
 
-  if (cache.date_np === source.date_np && cache.data.length > 0) return true;
+  // ✅ ADDED - Nepal date validation
+  const nepalDate = getNepalDateTime();
+  console.log(`📅 Nepal Time: ${nepalDate.dateAD} ${nepalDate.time} (${nepalDate.dayName})`);
+  
+  // ✅ ADDED - Add day name to date_np if not present
+  const fullDateNp = source.date_np.includes('बार') ? 
+                     source.date_np : 
+                     `${source.date_np}, ${nepalDate.dayName}`;
+
+  if (cache.date_np === fullDateNp && cache.data.length > 0) return true;
 
   const prompt = `
 You are an expert Vedic astrologer. 
@@ -76,14 +107,14 @@ SOURCE CONTENT (Nepali, analyze the essence):
 "${source.text.substring(0, 4000)}"
 
 TASK:
-Generate a daily horoscope for today (${source.date_np}) in PROFESSIONAL ENGLISH.
+Generate a daily horoscope for today (${fullDateNp}) in PROFESSIONAL ENGLISH.
 
 STRICT QUALITY RULES:
 1. NO INTRODUCTIONS: Start directly with the core advice. NEVER mention the name of the zodiac sign (e.g., Aries, Taurus, etc.) anywhere inside the prediction text. Use different sentence starters for each sign to ensure diversity
 2. SENTENCE COUNT: Exactly 5 professional sentences per sign. Use diverse vocabulary and avoid repetitive templates.
 3. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
 4. NO DATA CONTAMINATION: Never mention lucky color or lucky number inside the prediction text.
-5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${source.date_np}. Use standard color names (e.g., Deep Red, Navy Blue).
+5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${fullDateNp}. Use standard color names (e.g., Deep Red, Navy Blue).
 6. SPELLING: Taurus Nepali name must be 'वृष' (NOT वृषभ), Cancer must be 'कर्कट', and Scorpio must be 'वृश्चिक'.
 7. OUTPUT: Valid JSON only.
 
@@ -134,14 +165,14 @@ JSON STRUCTURE:
     });
 
     cache = {
-      date_np: source.date_np,
+      date_np: fullDateNp,  // ✅ CHANGED - with day name
       source: "Groq AI (Hamro Patro Official)",
       generated_at: new Date().toISOString(),
       last_checked: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
       data: fixedData // यहाँ शुद्ध डेटा राखियो
     };
 
-    console.log(`✅ Success: Fixed and Updated for ${source.date_np}`);
+    console.log(`✅ Success: Fixed and Updated for ${fullDateNp}`);
     return true;
   } catch (err) {
     console.error("AI Error:", err.message);
