@@ -1,8 +1,9 @@
 {
-  "name": "daily-horoscope-api",
+  "name": "rasifal-server",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Daily Rashifal API Server",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
@@ -10,7 +11,11 @@
     "node": ">=18"
   },
   "dependencies": {
+    "axios": "^1.6.7",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "node-fetch": "^3.3.2"
+    "node-cron": "^3.0.3"
   }
 }
