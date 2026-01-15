@@ -88,7 +88,7 @@ ${sourceText}
 
     cache = {
       date_np,
-      source: "Groq AI (Hamro Patro EN)",
+      source: "Groq AI (Hamro Patro)",
       generated_at: new Date().toISOString(),
       last_checked: new Date().toLocaleString("en-US", {
         timeZone: "Asia/Kathmandu"
