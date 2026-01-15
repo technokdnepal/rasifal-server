@@ -36,7 +36,7 @@ async function fetchNepaliDate() {
 
 /* ================= EN SOURCE ================= */
 async function fetchEnglishText() {
-  const res = await axios.get("https://english.hamropatro.com/rashifal", {
+  const res = await axios.get("https://www.hamropatro.com/rashifal", {
     headers: { "User-Agent": "Mozilla/5.0" },
     timeout: 15000
   });
