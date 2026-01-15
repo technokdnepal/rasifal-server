@@ -24,11 +24,12 @@ let cache = {
   data: []
 };
 
+// राशिको लिस्टमा 'कर्कट' शुद्ध बनाइएको छ
 const SIGNS = [
   { en: "Aries", np: "मेष" },
   { en: "Taurus", np: "वृष" },
   { en: "Gemini", np: "मिथुन" },
-  { en: "Cancer", np: "कर्क" },
+  { en: "Cancer", np: "कर्कट" },
   { en: "Leo", np: "सिंह" },
   { en: "Virgo", np: "कन्या" },
   { en: "Libra", np: "तुला" },
@@ -40,94 +41,107 @@ const SIGNS = [
 ];
 
 async function fetchHamroPatroNepali() {
-  const res = await axios.get("https://www.hamropatro.com/rashifal", {
-    headers: { "User-Agent": "Mozilla/5.0" },
-    timeout: 20000
-  });
+  try {
+    const res = await axios.get("https://www.hamropatro.com/rashifal", {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 20000
+    });
 
-  const $ = cheerio.load(res.data);
+    const $ = cheerio.load(res.data);
 
-  const date_np = $(".date").first().text().replace("आज -", "").trim();
+    // आधिकारिक नेपाली मिति तान्ने लजिक सुधारिएको छ
+    const date_np = $(".articleTitle.fullWidth h2").first().text().replace("आज -", "").trim() || 
+                    $(".date").first().text().replace("आज -", "").trim();
 
-  let text = $("body").text().replace(/\s+/g, " ").trim();
+    let text = $("body").text().replace(/\s+/g, " ").trim();
 
-  if (!date_np || text.length < 1000) return null;
+    if (!date_np || text.length < 1000) return null;
 
-  return { date_np, text };
+    return { date_np, text };
+  } catch (err) {
+    console.error("Scraping Error:", err.message);
+    return null;
+  }
 }
 
 async function generateRasifal() {
   const source = await fetchHamroPatroNepali();
   if (!source) return false;
 
-  if (cache.date_np === source.date_np) return true;
+  // यदि मिति परिवर्तन भएको छैन भने पुरानै क्यास चलाउने
+  if (cache.date_np === source.date_np && cache.data.length > 0) return true;
 
+  // कडा नियम र 'Be Careful' निर्देशनहरू सहितको प्रम्प्ट
   const prompt = `
-You are a professional Vedic astrologer.
+You are an expert Vedic astrologer. 
 
-Source content (Nepali, do NOT translate directly):
-"""
-${source.text.substring(0, 4000)}
-"""
+SOURCE CONTENT (Nepali, analyze the essence):
+"${source.text.substring(0, 4000)}"
 
 TASK:
-Generate DAILY HOROSCOPE in PROFESSIONAL ENGLISH.
+Generate a daily horoscope for today (${source.date_np}) in PROFESSIONAL ENGLISH.
 
-STRICT RULES:
-1. EXACTLY 12 signs.
-2. EXACTLY 5 sentences per sign.
-3. Start directly. NO intro phrases.
-4. DO NOT mention lucky color or number in prediction text.
-5. Lucky color & number must be calculated by you (planetary logic), NOT copied.
-6. Language must be clean professional English.
-7. Scorpio Nepali name must be 'वृश्चिक'.
-8. Output JSON only.
+STRICT QUALITY RULES:
+1. NO INTRODUCTIONS: Start directly with the prediction. DO NOT use "Individuals born under...", "For Aries today...", or any lead-in phrases.
+2. SENTENCE COUNT: Exactly 5 professional sentences per sign. Use diverse vocabulary and avoid repetitive templates.
+3. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
+4. NO DATA CONTAMINATION: Never mention lucky color or lucky number inside the prediction text.
+5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${source.date_np}. Use standard color names (e.g., Deep Red, Navy Blue).
+6. SPELLING: Cancer's Nepali name must be 'कर्कट' and Scorpio must be 'वृश्चिक'.
+7. OUTPUT: Valid JSON only.
 
-FORMAT:
+JSON STRUCTURE:
 {
  "data": [
   {
     "sign": "Aries",
     "sign_np": "मेष",
-    "prediction": "Five professional English sentences.",
-    "lucky_color": "Blue",
-    "lucky_number": 4
+    "prediction": "Five professional sentences starting directly with the daily outlook.",
+    "lucky_color": "Celestial Color",
+    "lucky_number": 7
   }
  ]
 }
 `;
 
-  const aiRes = await axios.post(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      model: GROQ_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.5,
-      response_format: { type: "json_object" }
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json"
+  try {
+    const aiRes = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.6,
+        response_format: { type: "json_object" }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        }
       }
-    }
-  );
+    );
 
-  const parsed = JSON.parse(aiRes.data.choices[0].message.content);
+    const parsed = JSON.parse(aiRes.data.choices[0].message.content);
 
-  cache = {
-    date_np: source.date_np,
-    source: "Groq AI (Hamro Patro)",
-    generated_at: new Date().toISOString(),
-    last_checked: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
-    data: parsed.data
-  };
+    cache = {
+      date_np: source.date_np,
+      source: "Groq AI (Hamro Patro Official)",
+      generated_at: new Date().toISOString(),
+      last_checked: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
+      data: parsed.data
+    };
 
-  return true;
+    console.log(`✅ Success: Updated for ${source.date_np}`);
+    return true;
+  } catch (err) {
+    console.error("AI Error:", err.message);
+    return false;
+  }
 }
 
+// सेड्युलर: हरेक १५ मिनेटमा चेक गर्ने
 cron.schedule("*/15 0-10 * * *", async () => {
-  cache.last_checked = new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" });
+  console.log("⏳ Running automated update check...");
   await generateRasifal();
 });
 
@@ -135,7 +149,7 @@ app.get("/api/rasifal", (req, res) => res.json(cache));
 
 app.get("/api/rasifal/force-update", async (req, res) => {
   const ok = await generateRasifal();
-  res.json({ success: ok });
+  res.json({ success: ok, date: cache.date_np });
 });
 
 app.listen(PORT, async () => {
