@@ -122,9 +122,12 @@ async function generateRasifal() {
     return false;
   }
 
-  // ✅ CRITICAL: Check if already have this date
-  if (cache.date_np && cache.date_np.includes(source.date_np.split(',')[0])) {
-    console.log(`ℹ️ Already have data for ${source.date_np} - Skipping`);
+  // ✅ FIXED: Extract ONLY date part for exact comparison
+  const scrapedDateOnly = source.date_np.split(',')[0].trim(); // "०१ माघ २०८२"
+  const cachedDateOnly = cache.date_np ? cache.date_np.split(',')[0].trim() : null;
+
+  if (cachedDateOnly === scrapedDateOnly) {
+    console.log(`ℹ️ Already have data for ${scrapedDateOnly} - Skipping`);
     return true;
   }
 
