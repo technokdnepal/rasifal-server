@@ -3,7 +3,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const cron = require("node-cron");
 const cors = require("cors");
-const moment = require("moment-timezone");  // ✅ ADDED
+const moment = require("moment-timezone");
 require("dotenv").config();
 
 // ✅ Force Nepal timezone
@@ -27,7 +27,6 @@ let cache = {
   data: []
 };
 
-// राशिको लिस्ट (यही लिस्ट अनुसार डेटा म्याप हुनेछ)
 const SIGNS = [
   { en: "Aries", np: "मेष" },
   { en: "Taurus", np: "वृष" },
@@ -43,7 +42,7 @@ const SIGNS = [
   { en: "Pisces", np: "मीन" }
 ];
 
-// ✅ ADDED: Get Nepal current date/time
+// ✅ Get Nepal current date/time
 function getNepalDateTime() {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const dayNames = {
@@ -64,6 +63,23 @@ function getNepalDateTime() {
   };
 }
 
+// ✅ CRITICAL: Extract date number from Nepali text
+function extractNepaliDateNumber(dateText) {
+  // Extract numbers from "०१ माघ २०८२" format
+  const match = dateText.match(/[०-९]+\s*माघ/);
+  if (!match) return null;
+  
+  // Convert Nepali digits to English
+  const nepaliToEnglish = {
+    '०': '0', '१': '1', '२': '2', '३': '3', '४': '4',
+    '५': '5', '६': '6', '७': '7', '८': '8', '९': '9'
+  };
+  
+  let numStr = match[0].replace(/\s*माघ/, '').trim();
+  numStr = numStr.split('').map(c => nepaliToEnglish[c] || c).join('');
+  return parseInt(numStr);
+}
+
 async function fetchHamroPatroNepali() {
   try {
     const res = await axios.get("https://www.hamropatro.com/rashifal", {
@@ -76,17 +92,23 @@ async function fetchHamroPatroNepali() {
     let date_np = $(".articleTitle.fullWidth h2").first().text().replace("आज -", "").trim() || 
                   $(".date").first().text().replace("आज -", "").trim();
 
-    // ✅ ADDED: Add day name if not present
-    const nepalDate = getNepalDateTime();
-    if (!date_np.includes('बार')) {
-      date_np = `${date_np}, ${nepalDate.dayName}`;
-    }
-
     let text = $("body").text().replace(/\s+/g, " ").trim();
 
     if (!date_np || text.length < 1000) return null;
 
-    return { date_np, text };
+    // ✅ CRITICAL: Validate scraped date
+    const scrapedDateNum = extractNepaliDateNumber(date_np);
+    const nepalTime = getNepalDateTime();
+    
+    console.log(`📅 Scraped: "${date_np}" (Date: ${scrapedDateNum})`);
+    console.log(`⏰ Nepal Time: ${nepalTime.time}, Day: ${nepalTime.dayName}`);
+
+    // ✅ Add correct day name if missing
+    if (!date_np.includes('बार')) {
+      date_np = `${date_np}, ${nepalTime.dayName}`;
+    }
+
+    return { date_np, text, scrapedDateNum };
   } catch (err) {
     console.error("❌ Scraping Error:", err.message);
     return null;
@@ -100,13 +122,13 @@ async function generateRasifal() {
     return false;
   }
 
-  // ✅ CRITICAL CHECK: Only update if different date
-  if (cache.date_np === source.date_np && cache.data.length > 0) {
-    console.log(`ℹ️ Same date (${source.date_np}) - Skipping generation`);
+  // ✅ CRITICAL: Check if already have this date
+  if (cache.date_np && cache.date_np.includes(source.date_np.split(',')[0])) {
+    console.log(`ℹ️ Already have data for ${source.date_np} - Skipping`);
     return true;
   }
 
-  console.log(`🔄 New date detected! Old: ${cache.date_np} → New: ${source.date_np}`);
+  console.log(`🔄 NEW DATE! Generating for: ${source.date_np}`);
 
   const prompt = `
 You are an expert Vedic astrologer. 
@@ -186,27 +208,27 @@ JSON STRUCTURE:
   }
 }
 
-// ✅ UPDATED CRON JOBS:
+// ✅ CRON JOBS - Smart scheduling
 
-// 1. Midnight auto-update (Nepal time)
-cron.schedule("0 0 * * *", async () => {
-  console.log("🌙 MIDNIGHT AUTO-UPDATE (Nepal Time)");
+// 1. Check every 30 minutes from 12 AM to 6 AM (wait for Hamro Patro update)
+cron.schedule("*/30 0-6 * * *", async () => {
+  console.log("🌙 Early morning check (waiting for Hamro Patro)...");
   await generateRasifal();
 }, {
   timezone: "Asia/Kathmandu"
 });
 
-// 2. Frequent checks during morning (every 15 min, 12 AM - 10 AM)
-cron.schedule("*/15 0-10 * * *", async () => {
-  console.log("⏰ Morning check...");
+// 2. Frequent checks 6 AM - 10 AM (people wake up)
+cron.schedule("*/15 6-10 * * *", async () => {
+  console.log("☀️ Morning check...");
   await generateRasifal();
 }, {
   timezone: "Asia/Kathmandu"
 });
 
-// 3. ✅ NEW: Hourly check throughout the day
-cron.schedule("0 * * * *", async () => {
-  console.log("🔄 Hourly server check...");
+// 3. Hourly checks rest of the day
+cron.schedule("0 11-23 * * *", async () => {
+  console.log("🔄 Hourly check...");
   await generateRasifal();
 }, {
   timezone: "Asia/Kathmandu"
@@ -226,7 +248,6 @@ app.get("/api/rasifal/force-update", async (req, res) => {
   });
 });
 
-// ✅ Server info endpoint
 app.get("/api/status", (req, res) => {
   const nepalTime = getNepalDateTime();
   res.json({
