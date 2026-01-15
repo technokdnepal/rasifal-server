@@ -12,8 +12,9 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = "llama-3.1-8b-instant";
+if (!process.env.GROQ_API_KEY) {
+  console.error("❌ GROQ_API_KEY missing");
+}
 
 let cache = {
   date_np: null,
@@ -26,9 +27,9 @@ let cache = {
 /* ================= NEPALI DATE ================= */
 async function fetchNepaliDate() {
   const res = await axios.get("https://hamropatro.com/rashifal", {
-    headers: { "User-Agent": "Mozilla/5.0" }
+    headers: { "User-Agent": "Mozilla/5.0" },
+    timeout: 15000
   });
-
   const $ = cheerio.load(res.data);
   return $(".date").first().text().trim();
 }
@@ -36,78 +37,67 @@ async function fetchNepaliDate() {
 /* ================= EN SOURCE ================= */
 async function fetchEnglishText() {
   const res = await axios.get("https://english.hamropatro.com/rashifal", {
-    headers: { "User-Agent": "Mozilla/5.0" }
+    headers: { "User-Agent": "Mozilla/5.0" },
+    timeout: 15000
   });
-
   const $ = cheerio.load(res.data);
-  const text = $("body").text().replace(/\s+/g, " ").trim();
-  return text;
+  return $("body").text().replace(/\s+/g, " ").slice(0, 6000);
 }
 
 /* ================= AI ================= */
 async function generate() {
-  const date_np = await fetchNepaliDate();
-  if (cache.date_np === date_np) return;
+  try {
+    const date_np = await fetchNepaliDate();
+    if (cache.date_np === date_np) return;
 
-  const sourceText = await fetchEnglishText();
+    const sourceText = await fetchEnglishText();
 
-  const prompt = `
-You are a professional Vedic astrologer.
+    const prompt = `
+Write DAILY horoscope in SIMPLE professional English.
 
-Write DAILY horoscope in SIMPLE ENGLISH.
-Tone must be SOFT and PROBABILISTIC like Nepali astrology.
+RULES:
+- EXACT 5 sentences per sign
+- Soft predictive tone
+- NO lucky info inside prediction
+- Lucky color & number separate
 
-STRICT RULES:
-- EXACTLY 5 sentences per sign
-- Prediction ONLY (no lucky info inside)
-- Use words like: may, seems, likely
-- No guarantees
-- Lucky color & number must be separate fields
-
-Return ONLY JSON:
-
-{
- "data":[
-  {
-   "sign":"Aries",
-   "prediction":"5 sentences...",
-   "lucky_color":"Red",
-   "lucky_number":5
-  }
- ]
-}
+Return JSON only.
 
 SOURCE:
 ${sourceText}
 `;
 
-  const ai = await axios.post(
-    "https://api.groq.com/openai/v1/chat/completions",
-    {
-      model: GROQ_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      temperature: 0.55
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json"
+    const ai = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant",
+        messages: [{ role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.55
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 20000
       }
-    }
-  );
+    );
 
-  const parsed = JSON.parse(ai.data.choices[0].message.content);
+    const parsed = JSON.parse(ai.data.choices[0].message.content);
 
-  cache = {
-    date_np,
-    source: "Groq AI (Hamro Patro EN)",
-    generated_at: new Date().toISOString(),
-    last_checked: new Date().toLocaleString("en-US", {
-      timeZone: "Asia/Kathmandu"
-    }),
-    data: parsed.data
-  };
+    cache = {
+      date_np,
+      source: "Groq AI (Hamro Patro EN)",
+      generated_at: new Date().toISOString(),
+      last_checked: new Date().toLocaleString("en-US", {
+        timeZone: "Asia/Kathmandu"
+      }),
+      data: parsed.data
+    };
+  } catch (err) {
+    console.error("❌ Generate failed:", err.message);
+  }
 }
 
 /* ================= API ================= */
@@ -116,11 +106,10 @@ app.get("/api/rasifal", async (_, res) => {
   res.json(cache);
 });
 
-app.get("/api/rasifal/force-update", async (_, res) => {
-  await generate();
-  res.json({ success: true, date_np: cache.date_np });
+app.get("/api/rasifal/health", (_, res) => {
+  res.json({ status: "OK" });
 });
 
 app.listen(PORT, () => {
-  console.log("Server running");
+  console.log(`🚀 Server running on ${PORT}`);
 });
