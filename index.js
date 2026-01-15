@@ -126,7 +126,7 @@ async function generateRasifal() {
   const scrapedDateOnly = source.date_np.split(',')[0].trim(); // "०१ माघ २०८२"
   const cachedDateOnly = cache.date_np ? cache.date_np.split(',')[0].trim() : null;
 
-  // ✅ NEW: If scraped date is DIFFERENT from cached, clear old cache
+  // ✅ If scraped date is DIFFERENT from cached, clear old cache
   if (cachedDateOnly && scrapedDateOnly !== cachedDateOnly) {
     console.log(`⚠️ Date mismatch detected!`);
     console.log(`   Scraped: ${scrapedDateOnly}`);
@@ -254,9 +254,31 @@ cron.schedule("0 11-23 * * *", async () => {
   timezone: "Asia/Kathmandu"
 });
 
-// API Endpoints
+// ✅ API ENDPOINTS
+
 app.get("/api/rasifal", (req, res) => {
   res.json(cache);
+});
+
+// ✅ NEW: Manual cache clear endpoint
+app.get("/api/rasifal/clear-cache", (req, res) => {
+  console.log("🗑️ MANUAL CACHE CLEAR REQUESTED");
+  
+  cache = {
+    date_np: null,
+    source: null,
+    generated_at: null,
+    last_checked: null,
+    data: []
+  };
+  
+  console.log("✅ Cache cleared successfully");
+  
+  res.json({
+    success: true,
+    message: "Cache cleared. Call /force-update to regenerate.",
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.get("/api/rasifal/force-update", async (req, res) => {
