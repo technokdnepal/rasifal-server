@@ -24,7 +24,7 @@ let cache = {
   data: []
 };
 
-// राशिको लिस्टमा 'कर्कट' शुद्ध बनाइएको छ
+// राशिको लिस्ट (यही लिस्ट अनुसार डेटा म्याप हुनेछ)
 const SIGNS = [
   { en: "Aries", np: "मेष" },
   { en: "Taurus", np: "वृष" },
@@ -49,7 +49,6 @@ async function fetchHamroPatroNepali() {
 
     const $ = cheerio.load(res.data);
 
-    // आधिकारिक नेपाली मिति तान्ने लजिक सुधारिएको छ
     const date_np = $(".articleTitle.fullWidth h2").first().text().replace("आज -", "").trim() || 
                     $(".date").first().text().replace("आज -", "").trim();
 
@@ -68,10 +67,8 @@ async function generateRasifal() {
   const source = await fetchHamroPatroNepali();
   if (!source) return false;
 
-  // यदि मिति परिवर्तन भएको छैन भने पुरानै क्यास चलाउने
   if (cache.date_np === source.date_np && cache.data.length > 0) return true;
 
-  // कडा नियम र 'Be Careful' निर्देशनहरू सहितको प्रम्प्ट
   const prompt = `
 You are an expert Vedic astrologer. 
 
@@ -121,17 +118,30 @@ JSON STRUCTURE:
       }
     );
 
+    // एआईको नतिजा पार्स गर्ने
     const parsed = JSON.parse(aiRes.data.choices[0].message.content);
+
+    // सुधार गरिएको भाग: एआईको डेटालाई हाम्रो SIGNS लिस्टसँग म्याप गरेर शुद्ध बनाउने -
+    const fixedData = SIGNS.map((s, index) => {
+      const aiItem = parsed.data[index];
+      return {
+        sign: s.en,       // सधैँ अङ्ग्रेजी (Aries, Taurus...)
+        sign_np: s.np,    // सधैँ शुद्ध नेपाली (वृष, कर्कट...)
+        prediction: aiItem.prediction,
+        lucky_color: aiItem.lucky_color,
+        lucky_number: aiItem.lucky_number
+      };
+    });
 
     cache = {
       date_np: source.date_np,
       source: "Groq AI (Hamro Patro Official)",
       generated_at: new Date().toISOString(),
       last_checked: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
-      data: parsed.data
+      data: fixedData // यहाँ शुद्ध डेटा राखियो
     };
 
-    console.log(`✅ Success: Updated for ${source.date_np}`);
+    console.log(`✅ Success: Fixed and Updated for ${source.date_np}`);
     return true;
   } catch (err) {
     console.error("AI Error:", err.message);
@@ -139,7 +149,6 @@ JSON STRUCTURE:
   }
 }
 
-// सेड्युलर: हरेक १५ मिनेटमा चेक गर्ने
 cron.schedule("*/15 0-10 * * *", async () => {
   console.log("⏳ Running automated update check...");
   await generateRasifal();
