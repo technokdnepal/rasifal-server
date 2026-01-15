@@ -6,7 +6,9 @@ const cors = require("cors");
 const moment = require("moment-timezone");  // ✅ ADDED
 require("dotenv").config();
 
+// ✅ Force Nepal timezone
 process.env.TZ = "Asia/Kathmandu";
+moment.tz.setDefault("Asia/Kathmandu");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -41,7 +43,7 @@ const SIGNS = [
   { en: "Pisces", np: "मीन" }
 ];
 
-// ✅ ADDED - Nepal current date/time helper
+// ✅ ADDED: Get Nepal current date/time
 function getNepalDateTime() {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const dayNames = {
@@ -71,8 +73,14 @@ async function fetchHamroPatroNepali() {
 
     const $ = cheerio.load(res.data);
 
-    const date_np = $(".articleTitle.fullWidth h2").first().text().replace("आज -", "").trim() || 
-                    $(".date").first().text().replace("आज -", "").trim();
+    let date_np = $(".articleTitle.fullWidth h2").first().text().replace("आज -", "").trim() || 
+                  $(".date").first().text().replace("आज -", "").trim();
+
+    // ✅ ADDED: Add day name if not present
+    const nepalDate = getNepalDateTime();
+    if (!date_np.includes('बार')) {
+      date_np = `${date_np}, ${nepalDate.dayName}`;
+    }
 
     let text = $("body").text().replace(/\s+/g, " ").trim();
 
@@ -80,25 +88,25 @@ async function fetchHamroPatroNepali() {
 
     return { date_np, text };
   } catch (err) {
-    console.error("Scraping Error:", err.message);
+    console.error("❌ Scraping Error:", err.message);
     return null;
   }
 }
 
 async function generateRasifal() {
   const source = await fetchHamroPatroNepali();
-  if (!source) return false;
+  if (!source) {
+    console.log("⚠️ Scraping failed, keeping existing cache");
+    return false;
+  }
 
-  // ✅ ADDED - Nepal date validation
-  const nepalDate = getNepalDateTime();
-  console.log(`📅 Nepal Time: ${nepalDate.dateAD} ${nepalDate.time} (${nepalDate.dayName})`);
-  
-  // ✅ ADDED - Add day name to date_np if not present
-  const fullDateNp = source.date_np.includes('बार') ? 
-                     source.date_np : 
-                     `${source.date_np}, ${nepalDate.dayName}`;
+  // ✅ CRITICAL CHECK: Only update if different date
+  if (cache.date_np === source.date_np && cache.data.length > 0) {
+    console.log(`ℹ️ Same date (${source.date_np}) - Skipping generation`);
+    return true;
+  }
 
-  if (cache.date_np === fullDateNp && cache.data.length > 0) return true;
+  console.log(`🔄 New date detected! Old: ${cache.date_np} → New: ${source.date_np}`);
 
   const prompt = `
 You are an expert Vedic astrologer. 
@@ -107,14 +115,14 @@ SOURCE CONTENT (Nepali, analyze the essence):
 "${source.text.substring(0, 4000)}"
 
 TASK:
-Generate a daily horoscope for today (${fullDateNp}) in PROFESSIONAL ENGLISH.
+Generate a daily horoscope for today (${source.date_np}) in PROFESSIONAL ENGLISH.
 
 STRICT QUALITY RULES:
 1. NO INTRODUCTIONS: Start directly with the core advice. NEVER mention the name of the zodiac sign (e.g., Aries, Taurus, etc.) anywhere inside the prediction text. Use different sentence starters for each sign to ensure diversity
 2. SENTENCE COUNT: Exactly 5 professional sentences per sign. Use diverse vocabulary and avoid repetitive templates.
 3. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
 4. NO DATA CONTAMINATION: Never mention lucky color or lucky number inside the prediction text.
-5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${fullDateNp}. Use standard color names (e.g., Deep Red, Navy Blue).
+5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${source.date_np}. Use standard color names (e.g., Deep Red, Navy Blue).
 6. SPELLING: Taurus Nepali name must be 'वृष' (NOT वृषभ), Cancer must be 'कर्कट', and Scorpio must be 'वृश्चिक'.
 7. OUTPUT: Valid JSON only.
 
@@ -149,15 +157,13 @@ JSON STRUCTURE:
       }
     );
 
-    // एआईको नतिजा पार्स गर्ने
     const parsed = JSON.parse(aiRes.data.choices[0].message.content);
 
-    // सुधार गरिएको भाग: एआईको डेटालाई हाम्रो SIGNS लिस्टसँग म्याप गरेर शुद्ध बनाउने -
     const fixedData = SIGNS.map((s, index) => {
       const aiItem = parsed.data[index];
       return {
-        sign: s.en,       // सधैँ अङ्ग्रेजी (Aries, Taurus...)
-        sign_np: s.np,    // सधैँ शुद्ध नेपाली (वृष, कर्कट...)
+        sign: s.en,
+        sign_np: s.np,
         prediction: aiItem.prediction,
         lucky_color: aiItem.lucky_color,
         lucky_number: aiItem.lucky_number
@@ -165,34 +171,77 @@ JSON STRUCTURE:
     });
 
     cache = {
-      date_np: fullDateNp,  // ✅ CHANGED - with day name
+      date_np: source.date_np,
       source: "Groq AI (Hamro Patro Official)",
       generated_at: new Date().toISOString(),
       last_checked: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
-      data: fixedData // यहाँ शुद्ध डेटा राखियो
+      data: fixedData
     };
 
-    console.log(`✅ Success: Fixed and Updated for ${fullDateNp}`);
+    console.log(`✅ SUCCESS! Updated to ${source.date_np}`);
     return true;
   } catch (err) {
-    console.error("AI Error:", err.message);
+    console.error("❌ AI Error:", err.message);
     return false;
   }
 }
 
-cron.schedule("*/15 0-10 * * *", async () => {
-  console.log("⏳ Running automated update check...");
+// ✅ UPDATED CRON JOBS:
+
+// 1. Midnight auto-update (Nepal time)
+cron.schedule("0 0 * * *", async () => {
+  console.log("🌙 MIDNIGHT AUTO-UPDATE (Nepal Time)");
   await generateRasifal();
+}, {
+  timezone: "Asia/Kathmandu"
 });
 
-app.get("/api/rasifal", (req, res) => res.json(cache));
+// 2. Frequent checks during morning (every 15 min, 12 AM - 10 AM)
+cron.schedule("*/15 0-10 * * *", async () => {
+  console.log("⏰ Morning check...");
+  await generateRasifal();
+}, {
+  timezone: "Asia/Kathmandu"
+});
+
+// 3. ✅ NEW: Hourly check throughout the day
+cron.schedule("0 * * * *", async () => {
+  console.log("🔄 Hourly server check...");
+  await generateRasifal();
+}, {
+  timezone: "Asia/Kathmandu"
+});
+
+// API Endpoints
+app.get("/api/rasifal", (req, res) => {
+  res.json(cache);
+});
 
 app.get("/api/rasifal/force-update", async (req, res) => {
   const ok = await generateRasifal();
-  res.json({ success: ok, date: cache.date_np });
+  res.json({ 
+    success: ok, 
+    date: cache.date_np,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ✅ Server info endpoint
+app.get("/api/status", (req, res) => {
+  const nepalTime = getNepalDateTime();
+  res.json({
+    server: "Online",
+    timezone: "Asia/Kathmandu",
+    current_time: nepalTime.time,
+    current_date: nepalTime.dateAD,
+    cached_date: cache.date_np,
+    last_update: cache.generated_at
+  });
 });
 
 app.listen(PORT, async () => {
-  console.log(`🚀 Rasifal server running on ${PORT}`);
+  console.log(`🚀 Rasifal Server running on port ${PORT}`);
+  console.log(`🌏 Timezone: Asia/Kathmandu`);
+  console.log(`📅 Current Nepal Time: ${getNepalDateTime().time}`);
   await generateRasifal();
 });
