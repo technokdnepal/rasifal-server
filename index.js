@@ -150,28 +150,56 @@ async function generateRasifal() {
 
   console.log(`🔄 NEW DATE! Generating for: ${source.date_np}`);
 
-  const prompt = `
-You are an expert Vedic astrologer. 
+ const prompt = `
+You are a senior Vedic astrologer and editorial writer.
 
-SOURCE CONTENT (Nepali, analyze the essence):
-"${source.text.substring(0, 4000)}"
+SOURCE (Nepali daily horoscope – DO NOT IGNORE):
+"${source.text.substring(0, 3500)}"
 
 TASK:
-Generate a daily horoscope for today (${source.date_np}) in PROFESSIONAL ENGLISH.
+Rewrite the ABOVE SOURCE CONTENT into PROFESSIONAL, CLEAR ENGLISH for today (${source.date_np}).
 
-STRICT QUALITY RULES:
-1. NO INTRODUCTIONS: Start directly with the core advice. NEVER mention the name of the zodiac sign (e.g., Aries, Taurus, etc.) anywhere inside the prediction text. Use different sentence starters for each sign to ensure diversity
-2. SENTENCE COUNT: Exactly 5 professional sentences per sign. Use diverse vocabulary and avoid repetitive templates.
-3. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
-4. NO DATA CONTAMINATION: Never mention lucky color or lucky number inside the prediction text.
-5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${source.date_np}. Use standard color names (e.g., Deep Red, Navy Blue).
-6. SPELLING: Taurus Nepali name must be 'वृष' (NOT वृषभ), Cancer must be 'कर्कट', and Scorpio must be 'वृश्चिक'.
-7. OUTPUT: Valid JSON only.
+CRITICAL RULES (NO EXCEPTIONS):
+1. SOURCE-FAITHFUL: Every prediction MUST be based on the meaning and flow of the provided Nepali source. 
+   Do NOT invent themes, emotions, or advice that are not implied in the source text.
+2. EXPLANATION STYLE: This is NOT a new horoscope. This is a clear, professional explanation of the SAME horoscope in English.
+3. SENTENCE COUNT: EXACTLY 4 sentences per sign. No more, no less.
+4. NO INTRO PHRASES: Do NOT use phrases like “People born under…”, “Today for…”, or zodiac names inside the prediction text.
+5. NO REPETITIVE AI PATTERNS: Avoid motivational speeches, philosophy, or abstract leadership language unless it clearly exists in the source.
+6. NO CONTAMINATION: Lucky color and lucky number MUST NOT appear inside the prediction text.
+7. LUCKY COLOR & NUMBER:
+   - Generate independently using Vedic planetary transits for ${source.date_np}
+   - Do NOT copy from any website
+   - Use realistic color names and numeric values
+8. SPELLING (STRICT):
+   - Aries Nepali: मेष
+   - Taurus Nepali: वृष
+   - Gemini: मिथुन
+   - Cancer: कर्कट
+   - Leo: सिंह
+   - Virgo: कन्या
+   - Libra: तुला
+   - Scorpio: वृश्चिक
+   - Sagittarius: धनु
+   - Capricorn: मकर
+   - Aquarius: कुम्भ
+   - Pisces: मीन
+9. LANGUAGE: Professional English only.
+10. OUTPUT: VALID JSON ONLY. No commentary.
 
-JSON STRUCTURE:
+JSON FORMAT:
 {
- "data": [
-  {
+  "data": [
+    {
+      "sign": "Aries",
+      "sign_np": "मेष",
+      "prediction": "Exactly five professional English sentences explaining the source meaning.",
+      "lucky_color": "Color Name",
+      "lucky_number": 7
+    }
+  ]
+}
+`;
     "sign": "Aries",
     "sign_np": "मेष",
     "prediction": "Five professional sentences starting directly with the daily outlook.",
