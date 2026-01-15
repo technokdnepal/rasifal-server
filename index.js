@@ -200,15 +200,6 @@ JSON FORMAT:
   ]
 }
 `;
-    "sign": "Aries",
-    "sign_np": "मेष",
-    "prediction": "Five professional sentences starting directly with the daily outlook.",
-    "lucky_color": "Celestial Color",
-    "lucky_number": 7
-  }
- ]
-}
-`;
 
   try {
     const aiRes = await axios.post(
