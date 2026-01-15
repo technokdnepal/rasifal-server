@@ -82,7 +82,7 @@ TASK:
 Generate a daily horoscope for today (${source.date_np}) in PROFESSIONAL ENGLISH.
 
 STRICT QUALITY RULES:
-1. NO INTRODUCTIONS: Start directly with the prediction. DO NOT use "Individuals born under...", "For Aries today...", or any lead-in phrases.
+1. NO INTRODUCTIONS: Start directly with the core advice. NEVER mention the name of the zodiac sign (e.g., Aries, Taurus, etc.) anywhere inside the prediction text. Use different sentence starters for each sign to ensure diversity
 2. SENTENCE COUNT: Exactly 5 professional sentences per sign. Use diverse vocabulary and avoid repetitive templates.
 3. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
 4. NO DATA CONTAMINATION: Never mention lucky color or lucky number inside the prediction text.
