@@ -87,7 +87,7 @@ STRICT QUALITY RULES:
 3. NO LABELS: Do not include the sign name (Aries, मेष, etc.) inside the prediction text.
 4. NO DATA CONTAMINATION: Never mention lucky color or lucky number inside the prediction text.
 5. PLANETARY LOGIC: Calculate a UNIQUE lucky color and number based on the planetary transits for ${source.date_np}. Use standard color names (e.g., Deep Red, Navy Blue).
-6. SPELLING: Cancer's Nepali name must be 'कर्कट' and Scorpio must be 'वृश्चिक'.
+6. SPELLING: Taurus Nepali name must be 'वृष' (NOT वृषभ), Cancer must be 'कर्कट', and Scorpio must be 'वृश्चिक'.
 7. OUTPUT: Valid JSON only.
 
 JSON STRUCTURE:
