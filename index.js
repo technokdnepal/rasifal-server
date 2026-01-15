@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
+const cron = require("node-cron");
 const cors = require("cors");
 require("dotenv").config();
 
@@ -12,9 +13,8 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-if (!process.env.GROQ_API_KEY) {
-  console.error("❌ GROQ_API_KEY missing");
-}
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = "llama-3.1-8b-instant";
 
 let cache = {
   date_np: null,
@@ -24,92 +24,121 @@ let cache = {
   data: []
 };
 
-/* ================= NEPALI DATE ================= */
-async function fetchNepaliDate() {
-  const res = await axios.get("https://hamropatro.com/rashifal", {
-    headers: { "User-Agent": "Mozilla/5.0" },
-    timeout: 15000
-  });
-  const $ = cheerio.load(res.data);
-  return $(".date").first().text().trim();
-}
+const SIGNS = [
+  { en: "Aries", np: "मेष" },
+  { en: "Taurus", np: "वृष" },
+  { en: "Gemini", np: "मिथुन" },
+  { en: "Cancer", np: "कर्क" },
+  { en: "Leo", np: "सिंह" },
+  { en: "Virgo", np: "कन्या" },
+  { en: "Libra", np: "तुला" },
+  { en: "Scorpio", np: "वृश्चिक" },
+  { en: "Sagittarius", np: "धनु" },
+  { en: "Capricorn", np: "मकर" },
+  { en: "Aquarius", np: "कुम्भ" },
+  { en: "Pisces", np: "मीन" }
+];
 
-/* ================= EN SOURCE ================= */
-async function fetchEnglishText() {
+async function fetchHamroPatroNepali() {
   const res = await axios.get("https://www.hamropatro.com/rashifal", {
     headers: { "User-Agent": "Mozilla/5.0" },
-    timeout: 15000
+    timeout: 20000
   });
+
   const $ = cheerio.load(res.data);
-  return $("body").text().replace(/\s+/g, " ").slice(0, 6000);
+
+  const date_np = $(".date").first().text().replace("आज -", "").trim();
+
+  let text = $("body").text().replace(/\s+/g, " ").trim();
+
+  if (!date_np || text.length < 1000) return null;
+
+  return { date_np, text };
 }
 
-/* ================= AI ================= */
-async function generate() {
-  try {
-    const date_np = await fetchNepaliDate();
-    if (cache.date_np === date_np) return;
+async function generateRasifal() {
+  const source = await fetchHamroPatroNepali();
+  if (!source) return false;
 
-    const sourceText = await fetchEnglishText();
+  if (cache.date_np === source.date_np) return true;
 
-    const prompt = `
-Write DAILY horoscope in SIMPLE professional English.
+  const prompt = `
+You are a professional Vedic astrologer.
 
-RULES:
-- EXACT 5 sentences per sign
-- Soft predictive tone
-- NO lucky info inside prediction
-- Lucky color & number separate
+Source content (Nepali, do NOT translate directly):
+"""
+${source.text.substring(0, 4000)}
+"""
 
-Return JSON only.
+TASK:
+Generate DAILY HOROSCOPE in PROFESSIONAL ENGLISH.
 
-SOURCE:
-${sourceText}
+STRICT RULES:
+1. EXACTLY 12 signs.
+2. EXACTLY 5 sentences per sign.
+3. Start directly. NO intro phrases.
+4. DO NOT mention lucky color or number in prediction text.
+5. Lucky color & number must be calculated by you (planetary logic), NOT copied.
+6. Language must be clean professional English.
+7. Scorpio Nepali name must be 'वृश्चिक'.
+8. Output JSON only.
+
+FORMAT:
+{
+ "data": [
+  {
+    "sign": "Aries",
+    "sign_np": "मेष",
+    "prediction": "Five professional English sentences.",
+    "lucky_color": "Blue",
+    "lucky_number": 4
+  }
+ ]
+}
 `;
 
-    const ai = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "llama-3.1-8b-instant",
-        messages: [{ role: "user", content: prompt }],
-        response_format: { type: "json_object" },
-        temperature: 0.55
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 20000
+  const aiRes = await axios.post(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      model: GROQ_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.5,
+      response_format: { type: "json_object" }
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json"
       }
-    );
+    }
+  );
 
-    const parsed = JSON.parse(ai.data.choices[0].message.content);
+  const parsed = JSON.parse(aiRes.data.choices[0].message.content);
 
-    cache = {
-      date_np,
-      source: "Groq AI (Hamro Patro)",
-      generated_at: new Date().toISOString(),
-      last_checked: new Date().toLocaleString("en-US", {
-        timeZone: "Asia/Kathmandu"
-      }),
-      data: parsed.data
-    };
-  } catch (err) {
-    console.error("❌ Generate failed:", err.message);
-  }
+  cache = {
+    date_np: source.date_np,
+    source: "Groq AI (Hamro Patro)",
+    generated_at: new Date().toISOString(),
+    last_checked: new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" }),
+    data: parsed.data
+  };
+
+  return true;
 }
 
-/* ================= API ================= */
-app.get("/api/rasifal", async (_, res) => {
-  await generate();
-  res.json(cache);
+cron.schedule("*/15 0-10 * * *", async () => {
+  cache.last_checked = new Date().toLocaleString("en-US", { timeZone: "Asia/Kathmandu" });
+  await generateRasifal();
 });
 
-app.get("/api/rasifal/health", (_, res) => {
-  res.json({ status: "OK" });
+app.get("/api/rasifal", (req, res) => res.json(cache));
+
+app.get("/api/rasifal/force-update", async (req, res) => {
+  const ok = await generateRasifal();
+  res.json({ success: ok });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on ${PORT}`);
+app.listen(PORT, async () => {
+  console.log(`🚀 Rasifal server running on ${PORT}`);
+  await generateRasifal();
 });
