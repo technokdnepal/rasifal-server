@@ -122,10 +122,27 @@ async function generateRasifal() {
     return false;
   }
 
-  // ✅ FIXED: Extract ONLY date part for exact comparison
+  // ✅ Extract ONLY date part for exact comparison
   const scrapedDateOnly = source.date_np.split(',')[0].trim(); // "०१ माघ २०८२"
   const cachedDateOnly = cache.date_np ? cache.date_np.split(',')[0].trim() : null;
 
+  // ✅ NEW: If scraped date is DIFFERENT from cached, clear old cache
+  if (cachedDateOnly && scrapedDateOnly !== cachedDateOnly) {
+    console.log(`⚠️ Date mismatch detected!`);
+    console.log(`   Scraped: ${scrapedDateOnly}`);
+    console.log(`   Cached:  ${cachedDateOnly}`);
+    console.log(`🗑️ Clearing old cache...`);
+    
+    cache = {
+      date_np: null,
+      source: null,
+      generated_at: null,
+      last_checked: null,
+      data: []
+    };
+  }
+
+  // ✅ Check if already have this EXACT date
   if (cachedDateOnly === scrapedDateOnly) {
     console.log(`ℹ️ Already have data for ${scrapedDateOnly} - Skipping`);
     return true;
