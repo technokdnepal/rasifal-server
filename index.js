@@ -149,46 +149,47 @@ async function generateRasifal() {
   }
 
  const prompt = `
-### ROLE:
-You are a High-Precision Linguistic Summary Expert. Your absolute priority is to transform the provided Nepali horoscope into SIMPLE, CLEAR ENGLISH without adding any external information.
+### IDENTITY:
+You are a Senior Linguistic Specialist and Expert Vedic Content Editor. Your sole mission is to interpret the provided Nepali horoscope into NATURAL, SIMPLE ENGLISH for a high-quality mobile app.
 
-### SOURCE DATA:
+### SOURCE CONTENT (12 SIGNS):
 "${source.full_text}"
 
-### OBJECTIVE:
-Summarize the Nepali text for each of the 12 zodiac signs into exactly 3 English sentences.
+### TASK:
+Accurately summarize the specific Nepali text for EACH of the 12 zodiac signs into EXACTLY 4 sentences of Simple English for today (${source.date_np}).
 
-### CRITICAL CONSTRAINTS (ZERO TOLERANCE FOR VIOLATION):
+### STRICT OPERATIONAL RULES (NO EXCEPTIONS):
 
-1. STRICT SOURCE BINDING:
-- You are NOT a fortune teller. You are an EDITOR.
-- Every sentence MUST be based on the provided Nepali text.
-- DO NOT invent themes like "romantic relationships," "promotions," "traveling," or "accidents" unless they are explicitly mentioned in the source for that specific sign.
-- If the source is brief, describe the existing points more clearly rather than adding new ideas.
+1. ABSOLUTE SOURCE FAITHFULNESS (ZERO HALLUCINATION):
+   - You must act as a MIRROR to the Nepali text. 
+   - If the Nepali source mentions "joint pain" (जोर्नी समस्या), "financial caution" (आर्थिक सावधानी), or "leadership" (नेतृत्व), these MUST appear in the English text.
+   - DO NOT invent topics like "romantic relationships," "promotions," "accidents," or "travel" unless they are explicitly in the source for that specific sign. 
+   - DO NOT provide generic motivational advice. If the source is negative, keep the English summary negative/cautious.
 
-2. NO ZODIAC NAMES:
-- DO NOT include the name of the zodiac sign (e.g., Aries, Taurus, मेष, वृष) inside the prediction text.
-- DO NOT use phrases like "People born under this sign" or "Today for Gemini."
-- Start the sentence directly with the prediction.
+2. UNIQUE PREDICTIONS FOR EVERY SIGN:
+   - Every zodiac sign MUST have a unique and distinct prediction. 
+   - DO NOT reuse the same sentence structures (e.g., "Today is a good day for...") across different signs. 
+   - If you provide similar or identical sentences for two different signs, the output is considered a failure.
 
-3. RANDOM LUCKY DATA:
-- Generate a COMPLETELY RANDOM lucky_color and lucky_number (1-12) for each sign.
-- DO NOT extract these from the Nepali source text.
-- DO NOT repeat the same lucky color/number for more than two signs in one response.
+3. SENTENCE COUNT & STRUCTURE:
+   - You MUST write EXACTLY 4 sentences per sign. No more, no less. 
+   - Use varied openings for sentences to avoid a robotic feel (e.g., "Expect progress in...", "Pay attention to...", "A focus on... is recommended").
 
-4. DIVERSE SENTENCE STRUCTURE:
-- AVOID the "Today is a good day for..." or "You will have a..." robotic patterns.
-- Vary your openings. Use styles like: "Focus on...", "Expected outcomes include...", "Caution is advised regarding...", "Progress is likely in...".
+4. NO ZODIAC NAMES OR INTROS:
+   - DO NOT include the zodiac sign name (Aries, Leo, मेष, सिंह, etc.) inside the prediction text.
+   - DO NOT use phrases like "People born under this sign" or "For those with this sign." Start directly with the prediction.
 
-5. SIMPLE & TRANSLATABLE VOCABULARY:
-- Use Basic English. AVOID complex words like "embrace," "navigate," "calls for," "vibrant," or "turmoil."
-- Use words that translate back to natural Nepali easily: "Good," "Work," "Health," "Family," "Money," "Careful."
+5. RANDOMIZED LUCKY DATA (INDEPENDENT):
+   - Generate a COMPLETELY RANDOM lucky_color and lucky_number (1-12) for each sign.
+   - These MUST NOT be extracted from the Nepali source. 
+   - Ensure a diverse range of colors (e.g., Lavender, Emerald, Charcoal, Slate) and numbers across the 12 signs.
 
-6. SENTENCE COUNT:
-- EXACTLY 3 sentences per sign. No more, no less.
+6. SIMPLE & TRANSLATABLE VOCABULARY:
+   - Use Basic English only. AVOID complex machinery words: "navigate," "embrace," "vibrant," "turmoil," or "calls for."
+   - Use simple words: "Good," "Work," "Health," "Careful," "Success," "Family."
 
-7. JSON FORMATTING:
-- Output MUST be a valid JSON object only. No intro/outro commentary.
+7. OUTPUT FORMAT:
+   - Return ONLY a valid JSON object. No intro, no outro, no commentary.
 
 ### JSON SCHEMA:
 {
@@ -196,7 +197,7 @@ Summarize the Nepali text for each of the 12 zodiac signs into exactly 3 English
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "[Sentence 1]. [Sentence 2]. [Sentence 3].",
+      "prediction": "[Sentence 1]. [Sentence 2]. [Sentence 3]. [Sentence 4].",
       "lucky_color": "Random Color Name",
       "lucky_number": 7
     }
