@@ -151,40 +151,26 @@ async function generateRasifal() {
   console.log(`🔄 NEW DATE! Generating for: ${source.date_np}`);
 
  const prompt = `
-You are a senior Vedic astrologer and editorial writer.
+You are a senior editorial writer. Your ONLY job is to summarize the provided Nepali source text into English.
 
-SOURCE (Nepali daily horoscope – DO NOT IGNORE):
+SOURCE (Nepali daily horoscope):
 "${source.text.substring(0, 3500)}"
 
 TASK:
-Rewrite the ABOVE SOURCE CONTENT into SIMPLE, TRANSLATABLE ENGLISH for today (${source.date_np}). 
+Summarize the ABOVE SOURCE CONTENT into SIMPLE ENGLISH for today (${source.date_np}).
 
-CRITICAL RULES (NO EXCEPTIONS):
-1. SOURCE-FAITHFUL: Every prediction MUST be based on the meaning and flow of the provided Nepali source. Do NOT invent themes, emotions, or advice that are not implied in the source text.
-2. EXPLANATION STYLE: This is NOT a new horoscope. This is a clear, professional explanation of the SAME horoscope in English. USE SIMPLE WORDS ONLY so the app can translate it back to natural Nepali without errors.
+STRICT QUALITY RULES (NO EXCEPTIONS):
+1. NO INTERNAL KNOWLEDGE: Do NOT use your own astrological knowledge or predefined zodiac traits. You must ONLY describe what is written in the provided Nepali source.
+2. SOURCE-FAITHFUL: Every prediction MUST be based ONLY on the provided Nepali source. If the source says the day is "joyful," you must write "joyful." Do NOT invent themes like "challenges" if they are not in the source.
 3. SENTENCE COUNT: EXACTLY 3 sentences per sign. No more, no less.
-4. NO INTRO PHRASES: Do NOT use phrases like “People born under…”, “Today for…”, or zodiac names (Aries, मेष, etc.) anywhere inside the prediction text.
-5. NO REPETITIVE AI PATTERNS: Strictly AVOID complex terms like "calls for," "navigate," or "embrace." Use simple logic like "It is a good day for...", "You may face...", or "Work will go well."
+4. SIMPLE VOCABULARY: Use very basic English words. Strictly AVOID words like "calls for," "navigate," "embrace," or "restless" to prevent bad translations in the app.
+5. NO INTRO PHRASES: Do NOT mention zodiac names (Aries, मेष, etc.) or phrases like "People born under" inside the prediction text.
 6. NO CONTAMINATION: Lucky color and lucky number MUST NOT appear inside the prediction text.
-7. LUCKY COLOR & NUMBER:
-   - Generate independently using Vedic planetary transits for ${source.date_np}
-   - Do NOT copy from any website
-   - Use realistic color names and numeric values
-8. SPELLING (STRICT):
-   - Aries Nepali: मेष
-   - Taurus Nepali: वृष
-   - Gemini: मिथुन
-   - Cancer: कर्कट
-   - Leo: सिंह
-   - Virgo: कन्या
-   - Libra: तुला
-   - Scorpio: वृश्चिक
-   - Sagittarius: धनु
-   - Capricorn: मकर
-   - Aquarius: कुम्भ
-   - Pisces: मीन
-9. LANGUAGE: Professional Simple English only.
-10. OUTPUT: VALID JSON ONLY. No commentary.
+7. LUCKY COLOR & NUMBER: 
+   - Generate independently using Vedic planetary transits for ${source.date_np}.
+   - Use simple and realistic color names.
+8. SPELLING (STRICT): Taurus is 'वृष', Cancer is 'कर्कट', and Scorpio is 'वृश्चिक'.
+9. OUTPUT: VALID JSON ONLY. No commentary.
 
 JSON FORMAT:
 {
@@ -192,7 +178,7 @@ JSON FORMAT:
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "Exactly 3 simple English sentences explaining the source meaning for the app to translate easily.",
+      "prediction": "Exactly 3 simple English sentences summarizing the source text ONLY.",
       "lucky_color": "Color Name",
       "lucky_number": 7
     }
