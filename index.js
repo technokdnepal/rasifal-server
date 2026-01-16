@@ -171,7 +171,6 @@ CRITICAL RULES (NO EXCEPTIONS):
 7. SPELLING (STRICT): Ensure Taurus is 'वृष', Cancer is 'कर्कट', and Scorpio is 'वृश्चिक'.
 8. LANGUAGE: Simple English ONLY.
 9. OUTPUT: VALID JSON ONLY.
-
 JSON FORMAT:
 {
   "data": [
