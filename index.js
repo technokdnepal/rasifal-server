@@ -149,26 +149,55 @@ async function generateRasifal() {
   }
 
  const prompt = `
-Explain the following Nepali horoscope into 3 simple English sentences for each sign.
+### ROLE:
+You are a High-Precision Linguistic Summary Expert. Your absolute priority is to transform the provided Nepali horoscope into SIMPLE, CLEAR ENGLISH without adding any external information.
 
-SOURCE:
+### SOURCE DATA:
 "${source.full_text}"
 
-RULES:
-1. Provide exactly 3 sentences for each sign.
-2. DO NOT mention the sign name (Aries, मेष, etc.) inside the text.
-3. Summarize ONLY the provided source. If a sign is missing in source, write a general positive message.
-4. Generate a random lucky color and a number (1-12) for each sign.
-5. Return ONLY a valid JSON.
+### OBJECTIVE:
+Summarize the Nepali text for each of the 12 zodiac signs into exactly 3 English sentences.
 
-JSON FORMAT:
+### CRITICAL CONSTRAINTS (ZERO TOLERANCE FOR VIOLATION):
+
+1. STRICT SOURCE BINDING:
+- You are NOT a fortune teller. You are an EDITOR.
+- Every sentence MUST be based on the provided Nepali text.
+- DO NOT invent themes like "romantic relationships," "promotions," "traveling," or "accidents" unless they are explicitly mentioned in the source for that specific sign.
+- If the source is brief, describe the existing points more clearly rather than adding new ideas.
+
+2. NO ZODIAC NAMES:
+- DO NOT include the name of the zodiac sign (e.g., Aries, Taurus, मेष, वृष) inside the prediction text.
+- DO NOT use phrases like "People born under this sign" or "Today for Gemini."
+- Start the sentence directly with the prediction.
+
+3. RANDOM LUCKY DATA:
+- Generate a COMPLETELY RANDOM lucky_color and lucky_number (1-12) for each sign.
+- DO NOT extract these from the Nepali source text.
+- DO NOT repeat the same lucky color/number for more than two signs in one response.
+
+4. DIVERSE SENTENCE STRUCTURE:
+- AVOID the "Today is a good day for..." or "You will have a..." robotic patterns.
+- Vary your openings. Use styles like: "Focus on...", "Expected outcomes include...", "Caution is advised regarding...", "Progress is likely in...".
+
+5. SIMPLE & TRANSLATABLE VOCABULARY:
+- Use Basic English. AVOID complex words like "embrace," "navigate," "calls for," "vibrant," or "turmoil."
+- Use words that translate back to natural Nepali easily: "Good," "Work," "Health," "Family," "Money," "Careful."
+
+6. SENTENCE COUNT:
+- EXACTLY 3 sentences per sign. No more, no less.
+
+7. JSON FORMATTING:
+- Output MUST be a valid JSON object only. No intro/outro commentary.
+
+### JSON SCHEMA:
 {
   "data": [
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "Write 3 sentences here based on source.",
-      "lucky_color": "Blue",
+      "prediction": "[Sentence 1]. [Sentence 2]. [Sentence 3].",
+      "lucky_color": "Random Color Name",
       "lucky_number": 7
     }
   ]
