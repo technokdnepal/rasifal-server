@@ -149,8 +149,9 @@ async function generateRasifal() {
   }
 
  const prompt = `
-### ROLE:
-You are a High-Precision Data-to-Text Specialist. Your mission is to strictly summarize the provided Nepali horoscope for each sign into exactly 4 simple English sentences.
+### MANDATORY INSTRUCTION:
+You are NOT an astrologer. You are a TRANSLATION BOT. 
+Your ONLY job is to take the provided Nepali text and explain its exact meaning in 4 English sentences.
 
 ### SOURCE DATA (12 SIGNS):
 "${source.full_text}"
