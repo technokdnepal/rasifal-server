@@ -149,7 +149,7 @@ async function generateRasifal() {
   }
 
   const prompt = `
-You are an Expert Nepali-to-English Summary Specialist. Your ONLY job is to explain the provided Nepali source text into SIMPLE, CLEAR ENGLISH.
+You are a Strict Content Editor and Summary Specialist. Your ONLY job is to transform the provided Nepali source text into SIMPLE ENGLISH summaries.
 
 SOURCE (Nepali daily horoscope):
 "${source.text.substring(0, 3500)}"
@@ -157,14 +157,14 @@ SOURCE (Nepali daily horoscope):
 TASK:
 Accurately summarize the ABOVE SOURCE CONTENT into exactly 3 sentences of SIMPLE ENGLISH for today (${source.date_np}).
 
-STRICT QUALITY RULES (NO EXCEPTIONS):
-1. NOT AN ASTROLOGER: You are NOT allowed to use your own astrological knowledge or predefined zodiac traits. You must ONLY summarize the specific meaning of the provided Nepali source text.
-2. STRICT ADHERENCE: If the source mentions specific topics like "religion," "education," or "travel," these MUST be included in your English summary. Do NOT ignore the actual content of the source.
-3. RANDOM LUCKY DATA (STRICT): Generate a COMPLETELY RANDOM lucky color and a lucky number (1-12). Do NOT extract these from the Nepali source text. They must be independent.
-4. SENTENCE COUNT: EXACTLY 3 sentences per sign. No more, no less.
-5. SIMPLE VOCABULARY: Use very basic English words so the app can translate them back to natural Nepali. Avoid idioms like "calls for" or "navigate."
-6. NO INTRO PHRASES: Do NOT mention zodiac names (Aries, मेष, etc.) or phrases like "People born under" inside the prediction text.
-7. SPELLING (STRICT): Taurus is 'वृष', Cancer is 'कर्कट', and Scorpio is 'वृश्चिक'.
+CRITICAL RULES (STRICT ADHERENCE REQUIRED):
+1. FORGET ALL PRIOR KNOWLEDGE: You must NOT use your own astrological knowledge. Do NOT invent filler sentences like "risk of accidents," "buy property," or "pay debts" unless they are explicitly mentioned in the Nepali source for that specific sign.
+2. STRICT CONTENT BINDING: If the source mentions "financial decisions" or "health issues," include them. If the source says the day is "joyful," use that. Do NOT generalize.
+3. DIVERSITY & VARIETY: Do NOT use the same sentence structure or advice for multiple zodiac signs. Every sign's prediction must be unique and reflect its specific source text.
+4. RANDOM LUCKY DATA (INDEPENDENT): Generate a COMPLETELY RANDOM lucky color and a lucky number (1-12). These MUST NOT be taken from the source and must vary across signs.
+5. SENTENCE COUNT: EXACTLY 3 sentences per sign. Use simple, translatable words (e.g., "It is a good day for..." instead of "This period calls for...").
+6. NO INTRO/ZODIAC NAMES: Do NOT mention "Aries," "Leo," "मेष," etc., inside the prediction.
+7. SPELLING: Taurus: 'वृष', Cancer: 'कर्कट', Scorpio: 'वृश्चिक'.
 8. OUTPUT: VALID JSON ONLY. No commentary.
 
 JSON FORMAT:
@@ -173,8 +173,8 @@ JSON FORMAT:
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "Exactly 3 simple sentences accurately summarizing the source text ONLY.",
-      "lucky_color": "Random Color Name",
+      "prediction": "Exactly 3 unique, source-based simple English sentences.",
+      "lucky_color": "Random Color",
       "lucky_number": 5
     }
   ]
