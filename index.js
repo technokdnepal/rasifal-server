@@ -148,29 +148,24 @@ async function generateRasifal() {
     return true;
   }
 
-  console.log(`🔄 NEW DATE! Generating for: ${source.date_np}`);
-
- const prompt = `
-You are a senior editorial writer. Your ONLY job is to summarize the provided Nepali source text into English.
+  const prompt = `
+You are an Expert Nepali-to-English Summary Specialist. Your ONLY job is to explain the provided Nepali source text into SIMPLE, CLEAR ENGLISH.
 
 SOURCE (Nepali daily horoscope):
 "${source.text.substring(0, 3500)}"
 
 TASK:
-Summarize the ABOVE SOURCE CONTENT into SIMPLE ENGLISH for today (${source.date_np}).
+Accurately summarize the ABOVE SOURCE CONTENT into exactly 3 sentences of SIMPLE ENGLISH for today (${source.date_np}).
 
 STRICT QUALITY RULES (NO EXCEPTIONS):
-1. NO INTERNAL KNOWLEDGE: Do NOT use your own astrological knowledge or predefined zodiac traits. You must ONLY describe what is written in the provided Nepali source.
-2. SOURCE-FAITHFUL: Every prediction MUST be based ONLY on the provided Nepali source. If the source says the day is "joyful," you must write "joyful." Do NOT invent themes like "challenges" if they are not in the source.
-3. SENTENCE COUNT: EXACTLY 3 sentences per sign. No more, no less.
-4. SIMPLE VOCABULARY: Use very basic English words. Strictly AVOID words like "calls for," "navigate," "embrace," or "restless" to prevent bad translations in the app.
-5. NO INTRO PHRASES: Do NOT mention zodiac names (Aries, मेष, etc.) or phrases like "People born under" inside the prediction text.
-6. NO CONTAMINATION: Lucky color and lucky number MUST NOT appear inside the prediction text.
-7. LUCKY COLOR & NUMBER: 
-   - Generate independently using Vedic planetary transits for ${source.date_np}.
-   - Use simple and realistic color names.
-8. SPELLING (STRICT): Taurus is 'वृष', Cancer is 'कर्कट', and Scorpio is 'वृश्चिक'.
-9. OUTPUT: VALID JSON ONLY. No commentary.
+1. NOT AN ASTROLOGER: You are NOT allowed to use your own astrological knowledge or predefined zodiac traits. You must ONLY summarize the specific meaning of the provided Nepali source text.
+2. STRICT ADHERENCE: If the source mentions specific topics like "religion," "education," or "travel," these MUST be included in your English summary. Do NOT ignore the actual content of the source.
+3. RANDOM LUCKY DATA (STRICT): Generate a COMPLETELY RANDOM lucky color and a lucky number (1-12). Do NOT extract these from the Nepali source text. They must be independent.
+4. SENTENCE COUNT: EXACTLY 3 sentences per sign. No more, no less.
+5. SIMPLE VOCABULARY: Use very basic English words so the app can translate them back to natural Nepali. Avoid idioms like "calls for" or "navigate."
+6. NO INTRO PHRASES: Do NOT mention zodiac names (Aries, मेष, etc.) or phrases like "People born under" inside the prediction text.
+7. SPELLING (STRICT): Taurus is 'वृष', Cancer is 'कर्कट', and Scorpio is 'वृश्चिक'.
+8. OUTPUT: VALID JSON ONLY. No commentary.
 
 JSON FORMAT:
 {
@@ -178,9 +173,9 @@ JSON FORMAT:
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "Exactly 3 simple English sentences summarizing the source text ONLY.",
-      "lucky_color": "Color Name",
-      "lucky_number": 7
+      "prediction": "Exactly 3 simple sentences accurately summarizing the source text ONLY.",
+      "lucky_color": "Random Color Name",
+      "lucky_number": 5
     }
   ]
 }
