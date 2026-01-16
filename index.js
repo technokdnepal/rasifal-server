@@ -157,13 +157,13 @@ SOURCE (Nepali daily horoscope – DO NOT IGNORE):
 "${source.text.substring(0, 3500)}"
 
 TASK:
-Rewrite the ABOVE SOURCE CONTENT into PROFESSIONAL, CLEAR ENGLISH for today (${source.date_np}).
+Rewrite the ABOVE SOURCE CONTENT into SIMPLE, CLEAR ENGLISH for today (${source.date_np}).
 
 CRITICAL RULES (NO EXCEPTIONS):
 1. SOURCE-FAITHFUL: Every prediction MUST be based on the meaning and flow of the provided Nepali source. 
    Do NOT invent themes, emotions, or advice that are not implied in the source text.
 2. EXPLANATION STYLE: This is NOT a new horoscope. This is a clear, professional explanation of the SAME horoscope in English.
-3. SENTENCE COUNT: EXACTLY 4 sentences per sign. No more, no less.
+3. SENTENCE COUNT: EXACTLY 3 sentences per sign. No more, no less.
 4. NO INTRO PHRASES: Do NOT use phrases like “People born under…”, “Today for…”, or zodiac names inside the prediction text.
 5. NO REPETITIVE AI PATTERNS: Avoid motivational speeches, philosophy, or abstract leadership language unless it clearly exists in the source.
 6. NO CONTAMINATION: Lucky color and lucky number MUST NOT appear inside the prediction text.
