@@ -149,50 +149,58 @@ async function generateRasifal() {
   }
 
  const prompt = `
-### MANDATORY INSTRUCTION:
-You are NOT an astrologer. You are a TRANSLATION BOT. 
-Your ONLY job is to take the provided Nepali text and explain its exact meaning in 4 English sentences.
+### ROLE & IDENTITY:
+You are a Senior Linguistic Expert and Professional Vedic Content Summarizer. Your only function is to interpret the provided Nepali text into EXACTLY 4 sentences of SIMPLE ENGLISH. You are NOT an astrologer; you are a TRANSLATOR and EDITOR.
 
-### SOURCE DATA (12 SIGNS):
+### SOURCE CONTENT (THE 12 ZODIAC SIGNS):
 "${source.full_text}"
 
-### MANDATORY EXECUTION RULES (ZERO TOLERANCE):
+### OBJECTIVE:
+For each of the 12 signs, generate a summary based EXCLUSIVELY on the provided source for today (${source.date_np}).
 
-1. EXCLUSIVE MAPPING (STRICT DATA SEPARATION):
-- You MUST treat each zodiac sign as an isolated unit. 
-- ONLY use the Nepali text provided for Aries to write the Aries summary. 
-- DO NOT mix keywords between signs. (Example: If 'Capricorn' mentions 'joint pain', that phrase must NOT appear in Aries or any other sign).
-- If a specific sign's Nepali text is missing in the source, write a very general positive summary rather than stealing data from another sign.
+### STRICT OPERATIONAL RULES (MANDATORY):
 
-2. UNIQUE CONTENT & NO TEMPLATES:
-- Every single zodiac sign MUST have a unique and distinct prediction. 
-- You are FORBIDDEN from repeating the same sentence or structure for multiple signs. 
-- If the output contains identical or near-identical sentences for two different signs, the task is a FAILURE.
+1. ABSOLUTE SOURCE ADHERENCE (NO HALLUCINATIONS):
+- Every single sentence MUST be rooted in the provided Nepali text. 
+- If the Nepali text mentions "joint pain" (जोर्नी समस्या), "financial loss" (आर्थिक निराशा), or "family support," these specific points MUST be in your summary.
+- DO NOT invent topics like "romantic relationships," "career promotions," "accidents," or "traveling" if they are NOT in the Nepali source for that specific sign.
+- You are forbidden from adding your own astrological knowledge or generic advice.
 
-3. SENTENCE STRUCTURE & COUNT:
-- Exactly 4 sentences per sign. 
-- Use simple, professional English vocabulary. 
-- Avoid robotic openings like "Today is a good day for...". Use variety: "Focusing on...", "Success is likely in...", "Be mindful of...".
+2. EXCLUSIVE SIGN MAPPING (NO DATA LEAKAGE):
+- You must isolate each sign's data. Do NOT use Capricorn's data for Aries. 
+- Ensure that the specific warnings and blessings for one sign do not appear in another sign's prediction.
 
-4. NO ZODIAC NAMES:
-- NEVER mention the name of the sign (Aries, मेष, Leo, etc.) inside the prediction text.
+3. UNIQUE CONTENT FOR EVERY SIGN (ANTI-TEMPLATE RULE):
+- Every zodiac sign MUST have a completely unique prediction.
+- DO NOT use the same sentence structure or the same advice for multiple signs. 
+- If you repeat the same sentence (e.g., "Success is likely in your professional endeavors") for more than one sign, the entire output is considered invalid.
 
-5. RANDOMIZED LUCKY DATA:
+4. SENTENCE STRUCTURE & WORDING:
+- EXACTLY 4 sentences per sign. No more, no less.
+- Use SIMPLE ENGLISH vocabulary (e.g., use "Money," "Work," "Health," "Family") to ensure natural back-translation to Nepali.
+- VARY your sentence starters. Avoid starting every sentence with "Today..." or "You will...". Use "Focus on...", "Care is needed in...", "Positive outcomes are expected for...".
+
+5. NO ZODIAC NAMES OR INTROS:
+- DO NOT mention the sign's name (Aries, मेष, Leo, etc.) inside the prediction text.
+- Start the prediction directly. No "People of this sign will..." or "For Aries...".
+
+6. RANDOMIZED INDEPENDENT LUCKY DATA:
 - Generate a COMPLETELY RANDOM lucky_color and lucky_number (1-12) for each sign.
-- These MUST be different across signs and NOT copied from the source.
+- These MUST be independent of the Nepali source. 
+- Use a wide variety of colors (e.g., Slate, Lavender, Emerald, Coral, Charcoal) and ensure they are diverse across the 12 signs.
 
-6. OUTPUT:
-- Return ONLY a valid JSON object. No commentary.
+### OUTPUT FORMAT:
+Output MUST be a VALID JSON object. No intro, no outro, no additional commentary.
 
-### JSON SCHEMA:
+### JSON STRUCTURE:
 {
   "data": [
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "[Unique Sentence 1]. [Unique Sentence 2]. [Unique Sentence 3]. [Unique Sentence 4].",
+      "prediction": "Sentence 1. Sentence 2. Sentence 3. Sentence 4.",
       "lucky_color": "Random Color",
-      "lucky_number": 7
+      "lucky_number": 5
     }
   ]
 }
