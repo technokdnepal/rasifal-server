@@ -1,7 +1,5 @@
 const express = require("express");
 const axios = require("axios");
-const cheerio = require("cheerio");
-const cron = require("node-cron");
 const cors = require("cors");
 const moment = require("moment-timezone");
 require("dotenv").config();
@@ -16,57 +14,46 @@ app.use(cors());
 app.use(express.json());
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = "openai/gpt-oss-120b:free";
+const GROQ_MODEL = "openai/gpt-oss-120b:free"; 
 
 let cache = {
-  date_np: "डेटा अपडेट हुँदैछ...",
-  source: "Initializing...",
-  generated_at: new Date().toISOString(),
+  date_np: null,
+  source: "AI Generated",
+  generated_at: null,
   data: []
 };
 
-// बलियो हेडरको साथ स्क्र्यापिङ
-async function fetchHamroPatroNepali() {
-  try {
-    const res = await axios.get("https://www.hamropatro.com/rashifal", {
-      headers: { 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9,ne;q=0.8"
-      },
-      timeout: 30000
-    });
-    const $ = cheerio.load(res.data);
-    const date_text = $(".articleTitle.fullWidth h2").text().trim() || "आजको राशिफल";
-    return { date_np: date_text };
-  } catch (err) {
-    console.error("❌ Scraping Error:", err.message);
-    return null;
-  }
-}
-
 async function generateRasifal() {
-  const source = await fetchHamroPatroNepali();
-  const dateKey = source ? source.date_np : "आज";
+  const nepalNow = moment().tz("Asia/Kathmandu");
+  const dateKey = nepalNow.format('YYYY-MM-DD');
+  const dayName = nepalNow.format('dddd'); // यहाँ नेपाली नाम राख्न तलको म्याप प्रयोग गर्न सकिन्छ
 
-  const prompt = `तपाईं नेपालको एक अनुभवी वैदिक ज्योतिषी हुनुहुन्छ। आज ${dateKey} को लागि नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
-नियमहरू: १. प्रत्येक राशिका लागि ठ्याक्कै ४ वाक्य मात्र। २. पूर्णतः स्वाभाविक नेपाली भाषा। ३. राशिको नाम Prediction भित्र नलेख्नुहोस्। ४. सल्लाह र सकारात्मक सन्देश। ५. JSON मा मात्र उत्तर दिनुहोस्।
+  const prompt = `तपाईं नेपालको एक अनुभवी वैदिक ज्योतिषी हुनुहुन्छ। आज मिति ${dateKey} को लागि नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
+
+कडा नियमहरू:
+१. प्रत्येक राशिका लागि ठ्याक्कै ४ वाक्य मात्र लेख्नुहोस्।
+२. पूर्णतः स्वाभाविक नेपाली भाषा प्रयोग गर्नुहोस्, कुनै अङ्ग्रेजी शब्द नमिसाउनुहोस्।
+३. राशिको नाम prediction भित्र नलेख्नुहोस्।
+४. सीधै राशिफलबाट सुरु गर्नुहोस्।
+५. JSON ढाँचामा मात्र उत्तर दिनुहोस्।
 
 JSON ढाँचा:
 {
   "date": "${dateKey}",
+  "day": "${dayName}",
   "data": [
-    {"sign": "Aries", "sign_np": "मेष", "prediction": "..."},
-    {"sign": "Taurus", "sign_np": "वृष", "prediction": "..."},
-    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "..."},
-    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "..."},
-    {"sign": "Leo", "sign_np": "सिंह", "prediction": "..."},
-    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "..."},
-    {"sign": "Libra", "sign_np": "तुला", "prediction": "..."},
-    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "..."},
-    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "..."},
-    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "..."},
-    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "..."},
-    {"sign": "Pisces", "sign_np": "मीन", "prediction": "..."}
+    {"sign": "Aries", "sign_np": "मेष", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Taurus", "sign_np": "वृष", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Leo", "sign_np": "सिंह", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Libra", "sign_np": "तुला", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "४ वाक्यको राशिफल..."},
+    {"sign": "Pisces", "sign_np": "मीन", "prediction": "४ वाक्यको राशिफल..."}
   ]
 }`;
 
@@ -83,12 +70,14 @@ JSON ढाँचा:
     );
 
     const parsed = JSON.parse(aiRes.data.choices[0].message.content);
+    
     cache = {
       date_np: dateKey,
-      source: "Groq AI (Nepali Astrologer)",
+      source: "AI Generated (Vedic Astrologer)",
       generated_at: new Date().toISOString(),
       data: parsed.data
     };
+    console.log("✅ राशिफल सफलतापूर्वक जेनेरेट भयो।");
     return true;
   } catch (err) {
     console.error("❌ AI Error:", err.message);
@@ -97,12 +86,13 @@ JSON ढाँचा:
 }
 
 app.get("/api/rasifal", (req, res) => res.json(cache));
+
 app.get("/api/rasifal/force-update", async (req, res) => {
-  await generateRasifal();
-  res.json(cache);
+  const success = await generateRasifal();
+  res.json({ success, data: cache });
 });
 
 app.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  await generateRasifal();
+  console.log(`🚀 सर्भर पोर्ट ${PORT} मा चलिरहेको छ।`);
+  await generateRasifal(); // स्टार्ट हुने बित्तिकै राशिफल बनाउँछ
 });
