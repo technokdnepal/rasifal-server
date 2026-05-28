@@ -16,7 +16,6 @@ app.use(express.json());
 
 const OR_KEY = process.env.OPENROUTER_API_KEY;
 
-// 'cache' भित्र डेटा नभए पनि एपले Error म्यासेज पाओस् भनेर व्यवस्था
 let cache = { data: [], last_updated: null };
 
 async function generateRasifal() {
@@ -34,7 +33,7 @@ async function generateRasifal() {
 
 📌 महत्वपूर्ण सन्दर्भ:
 - नेपाली ज्योतिष परम्परा, आजको तिथि र नक्षत्रको प्रभावलाई आधार मानी भविष्यवाणी गर्नुहोस्।
-- हाम्रो पात्रो, कान्तिपुर, BBC नेपाली जस्ता प्रतिष्ठित नेपाली साइटहरूको गम्भीर र प्रामाणिक राशिफल शैली अपनाउनुहोस्।
+- कान्तिपुर, BBC नेपाली जस्ता प्रतिष्ठित नेपाली साइटहरूको गम्भीर र प्रामाणिक राशिफल शैली अपनाउनुहोस्।
 - दैनिक जीवनमा लागू हुने व्यावहारिक सल्लाह दिनुहोस्।
 
 ✅ कडा नियमहरू:
@@ -44,11 +43,11 @@ async function generateRasifal() {
 4. राशिको नाम prediction भित्र नलेख्नुहोस्।
 5. सकारात्मक तर यथार्थपरक सन्देश दिनुहोस्।
 
-⚠️ विविधता अनिवार्य:
+⚠️ विविधता अनिवार्य: 
 - "आजको दिन", "आज तपाईँको" जस्ता दोहोरिने शब्दहरू नप्रयोग गर्नुहोस्।
 - प्रत्येक राशिको सुरुवात फरक शैलीबाट गर्नुहोस्।
 
-📝 लेखन शैली (परम्परागत र व्यावहारिक):
+📝 लेखन शैली:
 - पहिलो वाक्य: आजको गोचर अनुसार मुख्य प्रवृत्ति।
 - दोस्रो वाक्य: करियर, शिक्षा वा कार्यक्षेत्रमा प्रभाव।
 - तेस्रो वाक्य: आर्थिक अवस्था वा पारिवारिक सम्बन्ध।
@@ -76,7 +75,7 @@ JSON Format (केवल valid JSON मात्र):
   ]
 }
 
-⚡ CRITICAL: Extra text, markdown, explanation केही पनि नदिनुहोस्, केवल JSON मात्र।`;
+⚡ CRITICAL: Extra text वा markdown नदिनुहोस्, केवल JSON मात्र।`;
 
   try {
     console.log(`🔄 ${dateKey} को लागि राशिफल जेनेरेट हुँदैछ...`);
@@ -96,8 +95,7 @@ JSON Format (केवल valid JSON मात्र):
     );
 
     const content = response.data.choices[0].message.content;
-    const cleanJson = content.replace(/```json/g, "").replace(/
-```/g, "").trim();
+    const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed.data, last_updated: new Date().toISOString() };
@@ -107,21 +105,13 @@ JSON Format (केवल valid JSON मात्र):
   }
 }
 
-// हरेक दिन बिहान ३:०० बजे चल्ने गरी Cron job
 cron.schedule('0 3 * * *', () => {
   generateRasifal();
-}, {
-  scheduled: true,
-  timezone: "Asia/Kathmandu"
-});
+}, { scheduled: true, timezone: "Asia/Kathmandu" });
 
-// यो भागले सर्भर डाउन वा डेटा नभएको बेला एपलाई सुरक्षित राख्छ
 app.get("/api/rasifal", (req, res) => {
   if (cache.data.length === 0) {
-    return res.status(503).json({ 
-      error: "Service Unavailable", 
-      message: "राशिफल अद्यावधिक हुँदैछ, कृपया केही बेरमा पुन: प्रयास गर्नुहोस्।" 
-    });
+    return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
   }
   res.json(cache);
 });
