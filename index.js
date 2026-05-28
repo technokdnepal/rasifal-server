@@ -2,6 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 const moment = require("moment-timezone");
+const cron = require("node-cron"); // Cron लाइब्रेरी थपियो
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -77,6 +78,7 @@ JSON Format (केवल valid JSON मात्र):
 ⚡ CRITICAL: Extra text, markdown, explanation केही पनि नदिनुहोस्, केवल JSON मात्र।`;
 
   try {
+    console.log(`🔄 ${dateKey} को लागि राशिफल जेनेरेट हुँदैछ...`);
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -93,19 +95,30 @@ JSON Format (केवल valid JSON मात्र):
     );
 
     const content = response.data.choices[0].message.content;
-    const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
+    const cleanJson = content.replace(/```json/g, "").replace(/
+```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed.data, last_updated: new Date().toISOString() };
-    console.log("✅ Success! Data cached.");
+    console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
   } catch (err) {
     console.error("❌ OpenRouter Error:", err.message);
   }
 }
 
+// हरेक दिन बिहान ३:०० बजे चल्ने गरी Cron job सेट गरिएको
+cron.schedule('0 3 * * *', () => {
+  console.log("⏰ बिहानको ३ बजेको अटो-अपडेट सुरु भयो।");
+  generateRasifal();
+}, {
+  scheduled: true,
+  timezone: "Asia/Kathmandu"
+});
+
 app.get("/api/rasifal", (req, res) => res.json(cache));
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  generateRasifal();
+  // सर्भर स्टार्ट हुने बित्तिकै पनि एक पटक अपडेट गर्छ
+  await generateRasifal(); 
 });
