@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 const moment = require("moment-timezone");
-const cron = require("node-cron"); // Cron लाइब्रेरी थपियो
+const cron = require("node-cron");
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -16,6 +16,7 @@ app.use(express.json());
 
 const OR_KEY = process.env.OPENROUTER_API_KEY;
 
+// 'cache' भित्र डेटा नभए पनि एपले Error म्यासेज पाओस् भनेर व्यवस्था
 let cache = { data: [], last_updated: null };
 
 async function generateRasifal() {
@@ -34,7 +35,7 @@ async function generateRasifal() {
 📌 महत्वपूर्ण सन्दर्भ:
 - नेपाली ज्योतिष परम्परा, आजको तिथि र नक्षत्रको प्रभावलाई आधार मानी भविष्यवाणी गर्नुहोस्।
 - हाम्रो पात्रो, कान्तिपुर, BBC नेपाली जस्ता प्रतिष्ठित नेपाली साइटहरूको गम्भीर र प्रामाणिक राशिफल शैली अपनाउनुहोस्।
-- दैनिक जीवनमा लागू हुने व्यावहारिक सल्लाह दिनुहोस् (अनावश्यक र जटिल शब्द नराख्नुहोस्)।
+- दैनिक जीवनमा लागू हुने व्यावहारिक सल्लाह दिनुहोस्।
 
 ✅ कडा नियमहरू:
 1. प्रत्येक राशिका लागि ठ्याक्कै ४ वाक्य मात्र लेख्नुहोस्।
@@ -45,7 +46,7 @@ async function generateRasifal() {
 
 ⚠️ विविधता अनिवार्य:
 - "आजको दिन", "आज तपाईँको" जस्ता दोहोरिने शब्दहरू नप्रयोग गर्नुहोस्।
-- प्रत्येक राशिको सुरुवात फरक शैलीबाट गर्नुहोस् (जस्तै: "आर्थिक लाभको योग...", "करियरमा नयाँ मोड...", "स्वास्थ्यमा सुधार...", "सम्बन्धमा मिठास...")।
+- प्रत्येक राशिको सुरुवात फरक शैलीबाट गर्नुहोस्।
 
 📝 लेखन शैली (परम्परागत र व्यावहारिक):
 - पहिलो वाक्य: आजको गोचर अनुसार मुख्य प्रवृत्ति।
@@ -106,19 +107,26 @@ JSON Format (केवल valid JSON मात्र):
   }
 }
 
-// हरेक दिन बिहान ३:०० बजे चल्ने गरी Cron job सेट गरिएको
+// हरेक दिन बिहान ३:०० बजे चल्ने गरी Cron job
 cron.schedule('0 3 * * *', () => {
-  console.log("⏰ बिहानको ३ बजेको अटो-अपडेट सुरु भयो।");
   generateRasifal();
 }, {
   scheduled: true,
   timezone: "Asia/Kathmandu"
 });
 
-app.get("/api/rasifal", (req, res) => res.json(cache));
+// यो भागले सर्भर डाउन वा डेटा नभएको बेला एपलाई सुरक्षित राख्छ
+app.get("/api/rasifal", (req, res) => {
+  if (cache.data.length === 0) {
+    return res.status(503).json({ 
+      error: "Service Unavailable", 
+      message: "राशिफल अद्यावधिक हुँदैछ, कृपया केही बेरमा पुन: प्रयास गर्नुहोस्।" 
+    });
+  }
+  res.json(cache);
+});
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  // सर्भर स्टार्ट हुने बित्तिकै पनि एक पटक अपडेट गर्छ
   await generateRasifal(); 
 });
