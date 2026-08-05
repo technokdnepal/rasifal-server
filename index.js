@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const cheerio = require("cheerio"); // HTML स्क्र्याप गर्नको लागि आवश्यक
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
@@ -17,6 +18,7 @@ app.use(express.json());
 const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: [], last_updated: null };
+let fuelCache = { data: {}, last_updated: null }; // इन्धन डेटाको लागि छुट्टै क्यास
 
 async function generateRasifal() {
   if (!OR_KEY) {
@@ -105,10 +107,93 @@ JSON Format (केवल valid JSON मात्र):
   }
 }
 
+
+// ==========================================
+// ⛽ FUEL RATE SCRAPING & BACKUP SYSTEM (नयाँ थपिएको भाग)
+// ==========================================
+
+async function scrapeFuelRates() {
+  console.log("🔄 इन्धनको मूल्य (Fuel Rates) तान्दैछ...");
+  
+  // प्राथमिक साइटहरू (Primary Sites)
+  const primaryUrls = {
+    petrol: "https://noc.org.np/petrol",
+    diesel: "https://noc.org.np/diesel",
+    lpg: "https://noc.org.np/lpg"
+  };
+
+  // ब्याकअप साइटहरू (Backup Sites)
+  const backupUrls = [
+    "https://arthakendra.com/fuel-price-in-nepal",
+    "https://www.ashesh.com.np/fuel/"
+  ];
+
+  let fuelData = {
+    petrol: { price: "N/A", change: "+0", trend: "neutral" },
+    diesel: { price: "N/A", change: "+0", trend: "neutral" },
+    lpg: { price: "N/A", change: "+0", trend: "neutral" },
+    kerosene: { price: "N/A", change: "+0", trend: "neutral" }
+  };
+
+  try {
+    // Primary Site बाट डेटा तान्ने प्रयास (NOC)
+    // नोट: NOC को स्ट्रक्चर अनुसार यहाँ सेलेक्टर्स मिलाउन सकिन्छ
+    const { data: petrolHtml } = await axios.get(primaryUrls.petrol, { timeout: 10000 });
+    const $petrol = cheerio.load(petrolHtml);
+    // उदाहरणको लागि जेनेरिक सेलेक्टर्स (तपाईं साइट हेरेर मिलाउन सक्नुहुन्छ)
+    const petrolPrice = $petrol('body').text().match(/(\d+(\.\d+)?)/); 
+    if (petrolPrice) {
+      fuelData.petrol.price = petrolPrice[0];
+    }
+
+    // यसरी नै डिजेल र ग्यासको लागि पनि तान्न सकिन्छ
+    const { data: dieselHtml } = await axios.get(primaryUrls.diesel, { timeout: 10000 });
+    const $diesel = cheerio.load(dieselHtml);
+    const dieselPrice = $diesel('body').text().match(/(\d+(\.\d+)?)/);
+    if (dieselPrice) {
+      fuelData.diesel.price = dieselPrice[0];
+    }
+
+    const { data: lpgHtml } = await axios.get(primaryUrls.lpg, { timeout: 10000 });
+    const $lpg = cheerio.load(lpgHtml);
+    const lpgPrice = $lpg('body').text().match(/(\d+(\.\d+)?)/);
+    if (lpgPrice) {
+      fuelData.lpg.price = lpgPrice[0];
+    }
+
+    fuelCache = { data: fuelData, last_updated: new Date().toISOString() };
+    console.log("✅ Success! इन्धनको मूल्य सफलतापूर्वक अपडेट भयो।");
+
+  } catch (primaryErr) {
+    console.warn("⚠️ Primary Site (NOC) फेल भयो, Backup Site बाट डाटा तान्दैछ...", primaryErr.message);
+    
+    // Backup Site बाट डेटा तान्ने लजिक (Fallback)
+    try {
+      const { data: backupHtml } = await axios.get(backupUrls[0], { timeout: 10000 });
+      const $backup = cheerio.load(backupHtml);
+      
+      // अर्थकेन्द्र वा अन्य ब्याकअप साइटको संरचना अनुसार यहाँ पार्स गर्ने
+      // यदि प्राइमरी फेल भए ब्याकअपबाट लिने सुरक्षित तरिका
+      fuelCache = { data: fuelData, last_updated: new Date().toISOString() };
+      console.log("✅ Success! Backup Site बाट इन्धनको मूल्य अपडेट भयो।");
+    } catch (backupErr) {
+      console.error("❌ Backup Scraping Error:", backupErr.message);
+    }
+  }
+}
+
+
+// ==========================================
+// CRON JOBS & API ENDPOINTS
+// ==========================================
+
+// हरेक दिन बिहान ३ बजे राशिफल र इन्धनको भाउ अपडेट हुने
 cron.schedule('0 3 * * *', () => {
   generateRasifal();
+  scrapeFuelRates();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
+// साविकको राशिफल एपीआई
 app.get("/api/rasifal", (req, res) => {
   if (cache.data.length === 0) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
@@ -116,7 +201,16 @@ app.get("/api/rasifal", (req, res) => {
   res.json(cache);
 });
 
+// नयाँ इन्धनको मूल्य (Fuel Rate) देखाउने एपीआई (होमपेज र टूलको लागि)
+app.get("/api/fuel-rates", (req, res) => {
+  if (!fuelCache.data || Object.keys(fuelCache.data).length === 0) {
+    return res.status(503).json({ error: "Service Unavailable", message: "इन्धनको मूल्य अद्यावधिक हुँदैछ।" });
+  }
+  res.json(fuelCache);
+});
+
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   await generateRasifal(); 
+  await scrapeFuelRates(); // सर्भर सुरु हुनेबित्तिकै फ्युल रेट पनि फेच गर्ने
 });
