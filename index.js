@@ -138,11 +138,12 @@ JSON Format (केवल valid JSON मात्र):
   }
 }
 
+// हरेक दिन राति ३ बजे स्वतः चल्ने क्रोन जोब
 cron.schedule('0 3 * * *', () => {
   generateRasifal(true);
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
-// मुख्य राशिफल डाटा हेर्ने लिङ्क
+// मुख्य राशिफल डाटा हेर्ने लिङ्क (एपले यहीबाट डाटा तान्छ)
 app.get("/api/rasifal", (req, res) => {
   res.json({
     date: cache.date,
@@ -151,14 +152,14 @@ app.get("/api/rasifal", (req, res) => {
   });
 });
 
-// 🚀 म्यानुअली एआई ट्रिगर गर्ने नयाँ लिङ्क (यसले हातको हात नयाँ बनाउँछ)
+// 🛠️ म्यानुअल ट्रिगर लिङ्क (चेक गर्न वा एकपटक फोर्सफुली जेनेरेट गराउन)
 app.get("/api/generate-now", async (req, res) => {
   console.log("🛠️ म्यानुअल रूपमा राशिफल जेनेरेट गर्ने आदेश प्राप्त भयो...");
   const success = await generateRasifal(true);
   if (success) {
     res.json({ status: "success", message: "नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो!", data: cache });
   } else {
-    res.status(500).json({ status: "error", message: "जेनेरेट गर्न असफल भयो। OpenRouter Key वा कन्सोल लगर चेक गर्नुहोस्।" });
+    res.status(500).json({ status: "error", message: "जेनेरेट गर्न असफल भयो। OpenRouter Key वा Render को कन्सोल लगर चेक गर्नुहोस्।" });
   }
 });
 
