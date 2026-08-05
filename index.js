@@ -1,5 +1,5 @@
 const express = require("express");
-const axios = require("cors"); // (or require("axios"))
+const axios = require("axios");
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
