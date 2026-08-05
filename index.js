@@ -82,7 +82,7 @@ JSON Format (केवल valid JSON मात्र):
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-oss-120b:free", // तपाईंको पुरानै मोडल
+        model: "openai/gpt-oss-20b:free", // तपाईंले दिनुभएको सही र फ्रि मोडल
         messages: [{ role: "user", content: prompt }]
       },
       { 
@@ -119,7 +119,7 @@ app.get("/api/rasifal", (req, res) => {
   res.json(cache);
 });
 
-// म्यानुअल ट्रिगर अप्सन
+// 🛠️ म्यानुअल ट्रिगर अप्सन (यो लिङ्क खोलेर जतिबेला पनि नयाँ राशिफल जेनेरेट गराउन सक्नुहुन्छ)
 app.get("/api/generate-now", async (req, res) => {
   console.log("🛠️ म्यानुअल रूपमा राशिफल जेनेरेट गर्ने आदेश प्राप्त भयो...");
   const success = await generateRasifal();
