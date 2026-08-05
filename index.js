@@ -116,7 +116,8 @@ app.get("/api/rasifal", (req, res) => {
   res.json(cache);
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  await generateRasifal(); 
+  // यहाँ await हटाएर ब्याकग्राउन्डमा कल गराइएको छ ताकि सर्भर तुरुन्तै अन होस्
+  generateRasifal(); 
 });
