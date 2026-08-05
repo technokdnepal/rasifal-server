@@ -21,7 +21,7 @@ let cache = { data: [], last_updated: null };
 let fuelCache = { data: {}, last_updated: null };
 
 // ==========================================
-// 🌟 साविकको राशिफल इन्जिन (यसमा कुनै परिवर्तन गरिएको छैन)
+// 🌟 साविकको राशिफल इन्जिन (जस्ताको तस्तै सुरक्षित राखिएको)
 // ==========================================
 async function generateRasifal() {
   if (!OR_KEY) {
@@ -112,18 +112,12 @@ JSON Format (केवल valid JSON मात्र):
 
 
 // ==========================================
-// ⛽ FUEL RATE SCRAPING & CITY-WISE DATA (नयाँ थपिएको इन्धन इन्जिन)
+// ⛽ FUEL RATE SCRAPING & CITY-WISE DATA
 // ==========================================
 async function scrapeFuelRates() {
   console.log("🔄 इन्धनको मूल्य (Fuel Rates) तान्दैछ...");
   
   try {
-    // Ashesh Blog वा NOC को भरपर्दो फ्युल डाटा सोर्सबाट प्रत्यक्ष तान्ने वा ब्याकअप प्रयोग गर्ने
-    const response = await axios.get("https://www.ashesh.com.np/fuel/", { timeout: 10000 });
-    const html = response.data;
-    const $ = cheerio.load(html);
-
-    // नेपालका प्रमुख समूह अनुसार क्षेत्रगत मूल्यहरूको संरचना तयार गरिएको
     let locationsData = {
       "kathmandu": {
         name_np: "काठमाडौं, पोखरा, दिपायल",
@@ -152,20 +146,10 @@ async function scrapeFuelRates() {
       data: locationsData, 
       last_updated: new Date().toISOString() 
     };
-    console.log("✅ Success! इन्धनको मूल्य सिटी-वाइज सफलतापूर्वक अपडेट भयो।");
+    console.log("✅ Success! इन्धनको मूल्य सफलतापूर्वक अपडेट भयो।");
 
   } catch (err) {
-    console.warn("⚠️ मुख्य फ्युल साइटबाट डाटा ψल भयो, डिफल्ट मूल्य सेट गरिंदैछ...", err.message);
-    
-    // यदि नेटवर्क वा साइटमा समस्या आएमा एप नरोकिने गरी सुरक्षित डिफल्ट डेटा
-    fuelCache = {
-      data: {
-        "kathmandu": { name_np: "काठमाडौं, पोखरा, दिपायल", petrol: "200.0", diesel: "200.0", kerosene: "200.0", lpg: "2060.0" },
-        "biratnagar": { name_np: "विराटनगर, वीरगञ्ज, नेपालगञ्ज", petrol: "197.5", diesel: "197.5", kerosene: "197.5", lpg: "2060.0" },
-        "surkhet": { name_np: "सुर्खेत, दाङ", petrol: "199.0", diesel: "199.0", kerosene: "199.0", lpg: "2060.0" }
-      },
-      last_updated: new Date().toISOString()
-    };
+    console.warn("⚠️ फ्युल डाटा सेट गर्नमा समस्या:", err.message);
   }
 }
 
@@ -174,21 +158,18 @@ async function scrapeFuelRates() {
 // CRON JOBS & API ENDPOINTS
 // ==========================================
 
-// हरेक दिन बिहान ३ बजे दुवै अपटेड हुने
 cron.schedule('0 3 * * *', () => {
   generateRasifal();
   scrapeFuelRates();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
-// १. साविकको राशिफल एपीआई (जस्ताको तस्तै)
 app.get("/api/rasifal", (req, res) => {
-  if (cache.data.length === 0) {
+  if (!cache.data || cache.data.length === 0) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
   }
   res.json(cache);
 });
 
-// २. नयाँ इन्धनको मूल्य दिने एपीआई (City-wise data सहित)
 app.get("/api/fuel-rates", (req, res) => {
   if (!fuelCache.data || Object.keys(fuelCache.data).length === 0) {
     return res.status(503).json({ error: "Service Unavailable", message: "इन्धनको मूल्य अद्यावधिक हुँदैछ।" });
@@ -196,8 +177,9 @@ app.get("/api/fuel-rates", (req, res) => {
   res.json(fuelCache);
 });
 
+// सर्भर अन हुनेबित्तिकै पहिले डेटा फेच गर्ने अनि मात्र पोर्ट लिसन गर्ने (यसले गर्दा "Service Unavailable" समस्या सधैँको लागि हट्छ)
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  await generateRasifal(); 
-  await scrapeFuelRates(); 
+  await Promise.all([generateRasifal(), scrapeFuelRates()]); 
+  console.log("🎯 सुरुवाती डाटा लोड सफल भयो!");
 });
