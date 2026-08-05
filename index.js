@@ -14,13 +14,13 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: [], last_updated: null };
 
 async function generateRasifal() {
-  if (!GEMINI_KEY) {
-    console.error("❌ ERROR: GEMINI_API_KEY is missing!");
+  if (!OR_KEY) {
+    console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return;
   }
 
@@ -78,24 +78,30 @@ JSON Format (केवल valid JSON मात्र):
 ⚡ CRITICAL: Extra text वा markdown नदिनुहोस्, केवल JSON मात्र।`;
 
   try {
-    console.log(`🔄 ${dateKey} को लागि जेमिनाईबाट राशिफल जेनेरेट हुँदैछ...`);
-    
-    // यहाँ gemini-1.5-flash को सट्टा gemini-pro प्रयोग गरिएको छ जुन सबै API key मा 100% सपोर्ट गर्छ र कहिल्यै 404 दिँदैन।
+    console.log(`🔄 ${dateKey} को लागि OpenRouter बाट राशिफल जेनेरेट हुँदैछ...`);
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${GEMINI_KEY.trim()}`,
+      "https://openrouter.ai/api/v1/chat/completions",
       {
-        contents: [{ parts: [{ text: prompt }] }]
+        model: "openai/gpt-oss-20b:free", // तपाईंले छान्नुभएको सही र फ्रि मोडल
+        messages: [{ role: "user", content: prompt }]
+      },
+      { 
+        headers: { 
+          "Authorization": `Bearer ${OR_KEY.trim()}`,
+          "HTTP-Referer": "https://render.com",
+          "X-Title": "Rashifal App"
+        } 
       }
     );
 
-    const content = response.data.candidates[0].content.parts[0].text;
+    const content = response.data.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed.data, last_updated: new Date().toISOString() };
     console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
   } catch (err) {
-    console.error("❌ Gemini API Error:", err.response?.data || err.message);
+    console.error("❌ OpenRouter Error:", err.response?.data || err.message);
   }
 }
 
@@ -110,7 +116,7 @@ app.get("/api/rasifal", (req, res) => {
   res.json(cache);
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  generateRasifal(); 
+  await generateRasifal(); 
 });
