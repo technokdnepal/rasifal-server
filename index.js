@@ -1,5 +1,5 @@
 const express = require("express");
-const axios = require("axios");
+const axios = require("cors"); // (or require("axios"))
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
@@ -29,33 +29,33 @@ async function generateRasifal() {
   const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
   const dayName = dayNames[nepalNow.format('dddd')];
 
-  const prompt = `तपाईं नेपालको एक अनुभवी वैदिक ज्योतिषी हुनुहुन्छ। आज ${dateKey} ${dayName} को लागि नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
+  const prompt = `तपाईं नेपालको एक अनुभवी वैदिक ज्योतिषी हुनुहुन्छ। ${dateKey} ${dayName} को लागि नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
 
 📌 महत्वपूर्ण सन्दर्भ:
-- नेपाली ज्योतिष परम्परा, आजको तिथि र नक्षत्रको प्रभावलाई आधार मानी भविष्यवाणी गर्नुहोस्।
+- नेपाली ज्योतिष परम्परा, तिथि र नक्षत्रको प्रभावलाई आधार मानी भविष्यवाणी गर्नुहोस्।
 - कान्तिपुर, BBC नेपाली जस्ता प्रतिष्ठित नेपाली साइटहरूको गम्भीर र प्रामाणिक राशिफल शैली अपनाउनुहोस्।
 - दैनिक जीवनमा लागू हुने व्यावहारिक सल्लाह दिनुहोस्।
 
-✅ कडा नियमहरू:
+✅ कडा नियमहरू (पालना नभए अस्वीकार हुनेछ):
 1. प्रत्येक राशिका लागि ठ्याक्कै ४ वाक्य मात्र लेख्नुहोस्।
 2. स्वाभाविक, प्रवाहपूर्ण र शुद्ध नेपाली भाषा प्रयोग गर्नुहोस्।
-3. कुनै अङ्ग्रेजी शब्द प्रयोग नगर्नुहोस्।
-4. राशिको नाम prediction भित्र नलेख्नुहोस्।
+3. कुनै पनि अङ्ग्रेजी शब्द वा चिकित्सासम्बन्धी अप्राकृतिक शब्द (जस्तै: साइनस, पाचन तंत्र) प्रयोग नगर्नुहोस्।
+4. राशिको नाम prediction भित्र कहिल्यै नलेख्नुहोस्।
 5. सकारात्मक तर यथार्थपरक सन्देश दिनुहोस्।
 
-⚠️ विविधता अनिवार्य: 
-- "आजको दिन", "आज तपाईँको" जस्ता दोहोरिने शब्दहरू नप्रयोग गर्नुहोस्।
-- प्रत्येक राशिको सुरुवात फरक शैलीबाट गर्नुहोस्।
+⚠️ सुरुवाती शब्दहरूको कडा प्रतिबन्ध (अति महत्वपूर्ण):
+- "यो दिन", "यस दिन", "आजको दिन", "आज तपाईँको" वा यस्तै मिल्दोजुल्दो कुनै पनि शब्दबाट **कुनै पनि राशिको वाक्य सुरु गर्न पाइने छैन**। 
+- १२ वटै राशिको पहिलो वाक्यको सुरुवात पूर्ण रूपमा फरक र छुट्टै मौलिक शब्दबाट हुनुपर्छ (जस्तै: कसैमा कर्मको फल, कसैमा यात्राको योग, कसैमा मनमा उत्साह, कसैमा व्यापारमा लाभ, आदि)। कुनै पनि राशिमा सुरुवाती शब्द दोहोरिनु हुँदैन।
 
 📝 लेखन शैली:
-- पहिलो वाक्य: आजको गोचर अनुसार मुख्य प्रवृत्ति।
+- पहिलो वाक्य: गोचर फल अनुसार मुख्य प्रवृत्ति वा ग्रहको प्रभाव (तर 'यो दिन/यस दिन' शब्द प्रयोग निषेध)।
 - दोस्रो वाक्य: करियर, शिक्षा वा कार्यक्षेत्रमा प्रभाव।
 - तेस्रो वाक्य: आर्थिक अवस्था वा पारिवारिक सम्बन्ध।
 - चौथो वाक्य: स्वास्थ्य वा विशेष सावधानी/सल्लाह।
 
 ⚠️ नोट: lucky_color र lucky_number app ले generate गर्छ। तपाईंले नदिनुहोस्।
 
-JSON Format (केवल valid JSON मात्र):
+JSON Format (केवल valid JSON मात्र, date र day सहित):
 {
   "date": "${dateKey}",
   "day": "${dayName}",
@@ -82,7 +82,7 @@ JSON Format (केवल valid JSON मात्र):
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-oss-20b:free", // तपाईंले दिनुभएको सही र फ्रि मोडल
+        model: "openai/gpt-oss-20b:free",
         messages: [{ role: "user", content: prompt }]
       },
       { 
@@ -99,8 +99,8 @@ JSON Format (केवल valid JSON मात्र):
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
-    cache = { data: parsed.data, last_updated: new Date().toISOString() };
-    console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
+    cache = { data: parsed, last_updated: new Date().toISOString() };
+    console.log("✅ Success! नयाँ राशिफल सफलतापूर्वक सेभ भयो।");
     return true;
   } catch (err) {
     console.error("❌ OpenRouter Error:", err.message);
@@ -113,18 +113,17 @@ cron.schedule('0 3 * * *', () => {
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
 app.get("/api/rasifal", (req, res) => {
-  if (cache.data.length === 0) {
+  if (!cache.data || (cache.data.data && cache.data.data.length === 0)) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
   }
-  res.json(cache);
+  res.json(cache.data);
 });
 
-// 🛠️ म्यानुअल ट्रिगर अप्सन (यो लिङ्क खोलेर जतिबेला पनि नयाँ राशिफल जेनेरेट गराउन सक्नुहुन्छ)
 app.get("/api/generate-now", async (req, res) => {
   console.log("🛠️ म्यानुअल रूपमा राशिफल जेनेरेट गर्ने आदेश प्राप्त भयो...");
   const success = await generateRasifal();
   if (success) {
-    res.json({ status: "success", message: "नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो!", data: cache });
+    res.json({ status: "success", message: "नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
   } else {
     res.status(500).json({ status: "error", message: "जेनेरेट गर्न असफल भयो। कन्ट्रोल लगर चेक गर्नुहोस्।" });
   }
