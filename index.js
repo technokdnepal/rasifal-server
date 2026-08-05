@@ -1,5 +1,5 @@
 const express = require("express");
-const axios = require("axios");
+const { GoogleGenAI } = require("@google/genai");
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
@@ -14,13 +14,14 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-const OR_KEY = process.env.OPENROUTER_API_KEY;
+// गुगल जेमिनाई अफिसियल सेटअप (GEMINI_API_KEY बाट चल्छ)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 let cache = { data: [], last_updated: null };
 
 async function generateRasifal() {
-  if (!OR_KEY) {
-    console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("❌ ERROR: GEMINI_API_KEY is missing!");
     return;
   }
 
@@ -78,30 +79,21 @@ JSON Format (केवल valid JSON मात्र):
 ⚡ CRITICAL: Extra text वा markdown नदिनुहोस्, केवल JSON मात्र।`;
 
   try {
-    console.log(`🔄 ${dateKey} को लागि राशिफल जेनेरेट हुँदैछ...`);
-    const response = await axios.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        model: "openai/gpt-oss-120b:free",
-        messages: [{ role: "user", content: prompt }]
-      },
-      { 
-        headers: { 
-          "Authorization": `Bearer ${OR_KEY.trim()}`,
-          "HTTP-Referer": "https://render.com",
-          "X-Title": "Rashifal App"
-        } 
-      }
-    );
+    console.log(`🔄 ${dateKey} को लागि जेमिनाईबाट राशिफल जेनेरेट हुँदैछ...`);
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
 
-    const content = response.data.choices[0].message.content;
+    const content = response.text;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed.data, last_updated: new Date().toISOString() };
     console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
   } catch (err) {
-    console.error("❌ OpenRouter Error:", err.message);
+    console.error("❌ Gemini API Error:", err.message);
   }
 }
 
@@ -118,6 +110,5 @@ app.get("/api/rasifal", (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  // यहाँ await हटाएर ब्याकग्राउन्डमा कल गराइएको छ ताकि सर्भर तुरुन्तै अन होस्
   generateRasifal(); 
 });
