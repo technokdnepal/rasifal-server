@@ -18,10 +18,10 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: [], last_updated: null };
 
-async function generateRasifal() {
+async function generateRasifal(isForce = false) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
-    return;
+    return false;
   }
 
   const nepalNow = moment().tz("Asia/Kathmandu");
@@ -90,7 +90,8 @@ JSON Format (केवल valid JSON मात्र):
           "Authorization": `Bearer ${OR_KEY.trim()}`,
           "HTTP-Referer": "https://render.com",
           "X-Title": "Rashifal App"
-        } 
+        },
+        timeout: 45000 // एआईलाई चाहिने पर्याप्त समय (४५ सेकेन्ड)
       }
     );
 
@@ -100,20 +101,35 @@ JSON Format (केवल valid JSON मात्र):
     
     cache = { data: parsed.data, last_updated: new Date().toISOString() };
     console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
+    return true;
   } catch (err) {
     console.error("❌ OpenRouter Error:", err.message);
+    return false;
   }
 }
 
+// हरेक दिन राति ३ बजे स्वतः चल्ने क्रोन जोब
 cron.schedule('0 3 * * *', () => {
   generateRasifal();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
+// मुख्य राशिफल डाटा हेर्ने लिङ्क
 app.get("/api/rasifal", (req, res) => {
   if (cache.data.length === 0) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
   }
   res.json(cache);
+});
+
+// 🛠️ म्यानुअल ट्रिगर लिङ्क (यसलाई ब्राउजरमा खोलेर तपाईंले जतिबेला पनि नयाँ राशिफल जेनेरेट गराउन सक्नुहुन्छ)
+app.get("/api/generate-now", async (req, res) => {
+  console.log("🛠️ म्यानुअल रूपमा राशिफल जेनेरेट गर्ने आदेश प्राप्त भयो...");
+  const success = await generateRasifal();
+  if (success) {
+    res.json({ status: "success", message: "नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो!", data: cache });
+  } else {
+    res.status(500).json({ status: "error", message: "जेनेरेट गर्न असफल भयो। कन्ट्रोल लगर चेक गर्नुहोस्।" });
+  }
 });
 
 app.listen(PORT, async () => {
