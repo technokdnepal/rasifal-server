@@ -18,7 +18,7 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: [], last_updated: null };
 
-async function generateRasifal(isForce = false) {
+async function generateRasifal() {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return false;
@@ -82,7 +82,7 @@ JSON Format (केवल valid JSON मात्र):
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-oss-120b:free",
+        model: "google/gemini-2.0-flash-lite-preview-02-05:free",
         messages: [{ role: "user", content: prompt }]
       },
       { 
@@ -91,7 +91,7 @@ JSON Format (केवल valid JSON मात्र):
           "HTTP-Referer": "https://render.com",
           "X-Title": "Rashifal App"
         },
-        timeout: 45000 // एआईलाई चाहिने पर्याप्त समय (४५ सेकेन्ड)
+        timeout: 45000 
       }
     );
 
@@ -108,12 +108,10 @@ JSON Format (केवल valid JSON मात्र):
   }
 }
 
-// हरेक दिन राति ३ बजे स्वतः चल्ने क्रोन जोब
 cron.schedule('0 3 * * *', () => {
   generateRasifal();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
-// मुख्य राशिफल डाटा हेर्ने लिङ्क
 app.get("/api/rasifal", (req, res) => {
   if (cache.data.length === 0) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
@@ -121,7 +119,6 @@ app.get("/api/rasifal", (req, res) => {
   res.json(cache);
 });
 
-// 🛠️ म्यानुअल ट्रिगर लिङ्क (यसलाई ब्राउजरमा खोलेर तपाईंले जतिबेला पनि नयाँ राशिफल जेनेरेट गराउन सक्नुहुन्छ)
 app.get("/api/generate-now", async (req, res) => {
   console.log("🛠️ म्यानुअल रूपमा राशिफल जेनेरेट गर्ने आदेश प्राप्त भयो...");
   const success = await generateRasifal();
