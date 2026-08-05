@@ -80,9 +80,9 @@ JSON Format (केवल valid JSON मात्र):
   try {
     console.log(`🔄 ${dateKey} को लागि जेमिनाईबाट राशिफल जेनेरेट हुँदैछ...`);
     
-    // चालु र स्थिर मोडल 'gemini-1.5-flash' प्रयोग गरिएको
+    // gemini-1.5-flash-latest प्रयोग गरिएको
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY.trim()}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY.trim()}`,
       {
         contents: [{ parts: [{ text: prompt }] }]
       }
