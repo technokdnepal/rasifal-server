@@ -16,9 +16,9 @@ app.use(express.json());
 
 const OR_KEY = process.env.OPENROUTER_API_KEY;
 
-let cache = { data: [], last_updated: null };
+let cache = { date: null, data: [], last_updated: null };
 
-async function generateRasifal() {
+async function generateRasifal(isForce = false) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return;
@@ -26,6 +26,13 @@ async function generateRasifal() {
 
   const nepalNow = moment().tz("Asia/Kathmandu");
   const dateKey = nepalNow.format('YYYY-MM-DD');
+
+  // 🛡️ क्रेडिट बचाउने Smart Check: यदि आजको डेटको राशिफल अलरेडी छ भने एआई कल नगरिकन बाहिरिने!
+  if (!isForce && cache.date === dateKey && cache.data.length > 0) {
+    console.log(`ℹ️ ${dateKey} को राशिफल पहिल्यै सुरक्षित छ। क्रेडिट बचाउन एआई कल गरिएन।`);
+    return;
+  }
+
   const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
   const dayName = dayNames[nepalNow.format('dddd')];
 
@@ -79,11 +86,11 @@ JSON Format (केवल valid JSON मात्र):
 ⚡ CRITICAL: Extra text वा markdown नदिनुहोस्, केवल JSON मात्र।`;
 
   try {
-    console.log(`🔄 ${dateKey} को लागि राशिफल जेनेरेट हुँदैछ...`);
+    console.log(`🔄 ${dateKey} को लागि OpenRouter बाट राशिफल जेनेरेट हुँदैछ...`);
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
-        model: "openai/gpt-oss-20b:free", // तपाईंले प्रयोग गरिरहेको सही फ्री मोडल
+        model: "openai/gpt-oss-20b:free", // तपाईंको सही र कन्फर्म फ्रि मोडल
         messages: [{ role: "user", content: prompt }]
       },
       { 
@@ -99,25 +106,34 @@ JSON Format (केवल valid JSON मात्र):
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
-    cache = { data: parsed.data, last_updated: new Date().toISOString() };
-    console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
+    cache = { 
+      date: dateKey, 
+      data: parsed.data, 
+      last_updated: new Date().toISOString() 
+    };
+    console.log("✅ Success! नयाँ राशिफल सफलतापूर्वक सेभ भयो।");
   } catch (err) {
-    console.error("❌ OpenRouter Error:", err.message);
+    console.error("❌ OpenRouter Error:", err.response?.data || err.message);
   }
 }
 
+// हरेक दिन राति ३ बजे मात्र नयाँ जेनेरेट गर्छ
 cron.schedule('0 3 * * *', () => {
-  generateRasifal();
+  generateRasifal(true);
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
 app.get("/api/rasifal", (req, res) => {
   if (cache.data.length === 0) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
   }
-  res.json(cache);
+  res.json({
+    date: cache.date,
+    data: cache.data,
+    last_updated: cache.last_updated
+  });
 });
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  await generateRasifal(); 
+  await generateRasifal(false); 
 });
