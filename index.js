@@ -1,5 +1,5 @@
 const express = require("express");
-const { GoogleGenAI } = require("@google/genai");
+const axios = require("axios");
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
@@ -14,13 +14,12 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-// गुगल जेमिनाई अफिसियल सेटअप (GEMINI_API_KEY बाट चल्छ)
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 let cache = { data: [], last_updated: null };
 
 async function generateRasifal() {
-  if (!process.env.GEMINI_API_KEY) {
+  if (!GEMINI_KEY) {
     console.error("❌ ERROR: GEMINI_API_KEY is missing!");
     return;
   }
@@ -81,19 +80,22 @@ JSON Format (केवल valid JSON मात्र):
   try {
     console.log(`🔄 ${dateKey} को लागि जेमिनाईबाट राशिफल जेनेरेट हुँदैछ...`);
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
+    // Axios मार्फत गुगल जेमिनाईको अफिसियल फ्री एन्डपोइन्ट कल गर्ने
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY.trim()}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }]
+      }
+    );
 
-    const content = response.text;
+    const content = response.data.candidates[0].content.parts[0].text;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed.data, last_updated: new Date().toISOString() };
     console.log("✅ Success! नयाँ राशिफल अपडेट भयो।");
   } catch (err) {
-    console.error("❌ Gemini API Error:", err.message);
+    console.error("❌ Gemini API Error:", err.response?.data || err.message);
   }
 }
 
