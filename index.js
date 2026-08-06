@@ -19,7 +19,6 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// नेपाली मिति र बार निकाल्ने हेल्पर फंक्सन
 function getNepaliDateText() {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
@@ -30,7 +29,6 @@ function getNepaliDateText() {
   };
 }
 
-// १. Puppeteer मार्फत 'हाम्रो पात्रो' बाट डाटा स्क्र्याप गर्ने फंक्सन
 async function scrapeHamroPatroWithPuppeteer() {
   let browser = null;
   try {
@@ -40,16 +38,10 @@ async function scrapeHamroPatroWithPuppeteer() {
       args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
     const page = await browser.newPage();
-    
-    // युजर एजेन्ट सेट गर्ने ताकि वेबसाइटले बट (Bot) भनेर ब्लक नगरोस्
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-    
     await page.goto("https://www.hamropatro.com/rashifal", { waitUntil: "networkidle2", timeout: 30000 });
-    
-    // पेज पूर्ण रूपमा लोड भएपछि सम्पूर्ण टेक्स्ट तानेर ल्याउने
     const bodyText = await page.evaluate(() => document.body.innerText);
     await browser.close();
-    
     return bodyText;
   } catch (err) {
     console.error("❌ 'हाम्रो पात्रो' Puppeteer एरर:", err.message);
@@ -58,7 +50,6 @@ async function scrapeHamroPatroWithPuppeteer() {
   }
 }
 
-// २. Puppeteer मार्फत 'नेपाली पात्रो' (ब्याकअप) बाट डाटा स्क्र्याप गर्ने फंक्सन
 async function scrapeNepaliPatroWithPuppeteer() {
   let browser = null;
   try {
@@ -68,14 +59,10 @@ async function scrapeNepaliPatroWithPuppeteer() {
       args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
     const page = await browser.newPage();
-    
     await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-    
     await page.goto("https://nepalipatro.com.np/nepali-rashifal", { waitUntil: "networkidle2", timeout: 30000 });
-    
     const bodyText = await page.evaluate(() => document.body.innerText);
     await browser.close();
-    
     return bodyText;
   } catch (err) {
     console.error("❌ 'नेपाली पात्रो' Puppeteer एरर:", err.message);
@@ -84,7 +71,6 @@ async function scrapeNepaliPatroWithPuppeteer() {
   }
 }
 
-// ३. AI मार्फत प्रशोधन र जेनेरेट गर्ने फंक्सन
 async function processAndGenerate(rawContent, dateEn, dayName) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
@@ -150,7 +136,7 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed, last_updated: new Date().toISOString() };
-    console.log("✅ Success! Puppeteer र AI मार्फत नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो।");
+    console.log("✅ Success! नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो।");
     return true;
   } catch (err) {
     console.error("❌ OpenRouter Error:", err.message);
@@ -158,20 +144,17 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
   }
 }
 
-// ४. स्मार्ट रिट्राय लजिक (प्रोग्रेसिभ ग्यापसहित)
 async function runSmartScraperAndGenerate() {
   const { date_en, day } = getNepaliDateText();
 
   console.log(`🚀 ${date_en} (${day}) को लागि Puppeteer स्क्र्यापिङ सुरु हुँदैछ...`);
 
-  // प्रयास १: 'हाम्रो पात्रो' (पहिलो पटक)
   let rawData = await scrapeHamroPatroWithPuppeteer();
   if (rawData && rawData.includes(day)) {
     console.log(`✅ 'हाम्रो पात्रो' मा ${day} को राशिफल भेटियो!`);
     return await processAndGenerate(rawData, date_en, day);
   }
 
-  // प्रयास २: ३० मिनेट पछि
   console.log("⏳ पहिलो प्रयासमा भेटिएन, ३० मिनेटपछि फेरि प्रयास गर्दै...");
   await new Promise(resolve => setTimeout(resolve, 30 * 60 * 1000));
   rawData = await scrapeHamroPatroWithPuppeteer();
@@ -180,7 +163,6 @@ async function runSmartScraperAndGenerate() {
     return await processAndGenerate(rawData, date_en, day);
   }
 
-  // प्रयास ३: १ घण्टा पछि
   console.log("⏳ दोस्रो प्रयास पनि असफल, १ घण्टापछि फेरि प्रयास गर्दै...");
   await new Promise(resolve => setTimeout(resolve, 60 * 60 * 1000));
   rawData = await scrapeHamroPatroWithPuppeteer();
@@ -189,7 +171,6 @@ async function runSmartScraperAndGenerate() {
     return await processAndGenerate(rawData, date_en, day);
   }
 
-  // प्रयास ४: थप १ घण्टा पछि (अन्तिम प्रयास हाम्रो पात्रोमा)
   console.log("⏳ तेस्रो प्रयास पनि असफल, अन्तिमपटक हाम्रो पात्रोमा प्रयास गर्दै...");
   await new Promise(resolve => setTimeout(resolve, 60 * 60 * 1000));
   rawData = await scrapeHamroPatroWithPuppeteer();
@@ -198,8 +179,7 @@ async function runSmartScraperAndGenerate() {
     return await processAndGenerate(rawData, date_en, day);
   }
 
-  // यदि हाम्रो पात्रोबाट आएन भने 'नेपाली पात्रो' (ब्याकअप साइट) मा जाने
-  console.log("⚠️ 'हाम्रो पात्रो' मा भेटिएन। अब 'नेपाली पात्रो' (ब्याकअप) मा जाँदैछ...");
+  console.log("⚠️ 'हाम्रो पात्रो' मा भेटिएन। अब 'नेपाली पात्रो' मा ब्याकअप प्रयास गर्दै...");
   let backupData = await scrapeNepaliPatroWithPuppeteer();
   if (backupData && backupData.includes(day)) {
     console.log(`✅ 'नेपाली पात्रो' मा ${day} को राशिफल भेटियो!`);
@@ -210,12 +190,10 @@ async function runSmartScraperAndGenerate() {
   return false;
 }
 
-// ५. क्रोन जोब (हरेक दिन बिहान ४:०० बजे)
 cron.schedule('0 4 * * *', () => {
   runSmartScraperAndGenerate();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
-// API Endpoints
 app.get("/api/rasifal", (req, res) => {
   if (!cache.data) {
     return res.status(503).json({ error: "Service Unavailable", message: "राशिफल अद्यावधिक हुँदैछ।" });
