@@ -29,10 +29,10 @@ function getNepaliDateText() {
   };
 }
 
-// १. 'हाम्रो पात्रो' बाट डाटा तान्ने
-async function scrapeHamroPatro() {
+// १. 'हाम्रो पात्रो' वा 'नेपाली पात्रो' बाट डाटा तान्ने
+async function scrapeData() {
   try {
-    console.log("🔍 Axios मार्फत 'हाम्रो पात्रो' बाट डाटा तान्दै...");
+    console.log("🔍 'हाम्रो पात्रो' बाट डाटा तान्दै...");
     const { data } = await axios.get("https://www.hamropatro.com/rashifal", {
       headers: { 
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -42,21 +42,17 @@ async function scrapeHamroPatro() {
     });
     const $ = cheerio.load(data);
     let scrapedText = "";
-    // राशिफलका मुख्य कन्टेन्टहरू वा सबै प्याराग्राफहरू तान्ने
     $("p, div, span").each((i, el) => {
       scrapedText += $(el).text() + "\n";
     });
-    return scrapedText;
+    if (scrapedText.length > 200) return scrapedText;
   } catch (err) {
-    console.error("❌ 'हाम्रो पात्रो' स्क्र्यापिङ एरर:", err.message);
-    return null;
+    console.error("❌ 'हाम्रो पात्रो' स्क्र्यापिङ असफल:", err.message);
   }
-}
 
-// २. 'नेपाली पात्रो' (ब्याकअप) बाट डाटा तान्ने
-async function scrapeNepaliPatro() {
+  // ब्याकअप: नेपाली पात्रो
   try {
-    console.log("🔍 Axios मार्फत 'नेपाली पात्रो' (ब्याकअप) बाट डाटा तान्दै...");
+    console.log("⚠️ 'नेपाली पात्रो' (ब्याकअप) बाट डाटा तान्दै...");
     const { data } = await axios.get("https://nepalipatro.com.np/nepali-rashifal", {
       headers: { 
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -70,54 +66,54 @@ async function scrapeNepaliPatro() {
     });
     return scrapedText;
   } catch (err) {
-    console.error("❌ 'नेपाली पात्रो' स्क्र्यापिङ एरर:", err.message);
+    console.error("❌ 'नेपाली पात्रो' स्क्र्यापिङ असफल:", err.message);
     return null;
   }
 }
 
-// ३. AI मार्फत प्रशोधन र जेनेरेट गर्ने
+// २. तपाईंले भन्नु भएको दुई-चरण (Two-Step) प्रक्रिया: नेपाली -> अंग्रेजी अनुवाद -> सरल नेपालीमा ४ वाक्य जेनेरेट
 async function processAndGenerate(rawContent, dateEn, dayName) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return false;
   }
 
-  const prompt = `तपाईं नेपालको एक प्रतिष्ठित र लोकप्रिय पत्रिकाका लागि दैनिक राशिफल लेख्ने अनुभवी ज्योतिषी हुनुहुन्छ। आज अंग्रेजी मिति ${dateEn} (${dayName}) हो। तल दिइएको स्रोत डाटालाई आधार मानी नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
+  const prompt = `You are an expert content writer and astrologer. 
+Step 1: First, read the following raw scraped horoscope data from Nepal calendar and understand its core astrological meaning in English.
+Step 2: Then, rewrite each of the 12 zodiac signs into **very simple, natural, and flowing conversational Nepali language**.
 
-📌 स्रोत डेटा:
-${rawContent ? rawContent.substring(0, 8000) : "नवीनतम राशिफल"}
+📌 Raw Data:
+${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 
-✅ कडा नियमहरू:
-1. भाषा एकदमै सरल, सहज, बग्ने खालको (Flowing) र सर्वसाधारणले पढ्नेबित्तिकै बुझ्ने हुनुपर्छ। कडा वा अप्राकृतिक शब्दहरू प्रयोग नगर्नुहोस्।
-2. "हाम्रो पात्रो" को राशिफलमा जस्तै स्वास्थ्य, व्यापार/कर्मक्षेत्र, आर्थिक र पारिवारिक सम्बन्धलाई जोडेर व्यावहारिक भविष्यवाणी दिनुहोस्।
-3. प्रत्येक राशिका लागि ठ्याक्कै ४ वाक्य मात्र लेख्नुहोस् (न एक वाक्य बढी, न कम)।
-4. कुनै पनि अङ्ग्रेजी शब्द वा चिकित्सासम्बन्धी अप्राकृतिक शब्द प्रयोग नगर्नुहोस्।
-5. राशिको नाम prediction भित्र वा वाक्यको सुरुमा कहिल्यै नलेख्नुहोस्।
-6. सकारात्मक, कर्मशील र यथार्थपरक सन्देश दिनुहोस्।
-7. "यो दिन", "यस दिन", "आजको दिन", "आज तपाईँको" जस्ता घिस्रिएका शब्दबाट कुनै पनि राशिको वाक्य सुरु नगर्नुहोस्।
+✅ Strict Rules for the Nepali Output:
+1. **Each zodiac sign must have EXACTLY 4 sentences (not more, not less).**
+2. Do not copy the original words directly; make it completely fresh, original, and easy to read.
+3. Avoid heavy or complex Sanskrit words. Use everyday simple words.
+4. Never include the zodiac sign's name inside the prediction text or at the beginning of sentences.
+5. Do not start sentences with phrases like "आजको दिन" or "यस दिन".
 
-JSON Format (date_np मा नेपाली विक्रम संवत् जस्तै '२०८३ साउन २१, बिहीबार' र date मा अंग्रेजी मिति '${dateEn}' राख्नुहोला):
+Return ONLY a valid JSON object matching this exact structure:
 {
   "date_np": "२०८३ साउन २१, बिहीबार",
   "date": "${dateEn}",
   "day": "${dayName}",
   "data": [
-    {"sign": "Aries", "sign_np": "मेष", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Taurus", "sign_np": "वृष", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Leo", "sign_np": "सिंह", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Libra", "sign_np": "तुला", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
-    {"sign": "Pisces", "sign_np": "मीन", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."}
+    {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्。"},
+    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्।"},
+    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्。"},
+    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्。"},
+    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य यहाँ लेख्नुहोस्। दोस्रो वाक्य लेख्नुहोस्। तेस्रो वाक्य लेख्नुहोस्। चौथो वाक्य लेख्नुहोस्。"}
   ]
 }
 
-⚡ CRITICAL: केवल valid JSON मात्र दिनुहोस्।`;
+⚡ CRITICAL: Do not include any extra markdown or text, only output valid JSON.`;
 
   try {
     const response = await axios.post(
@@ -139,7 +135,7 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
     const content = response.data.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! राशिफल सफलतापूर्वक जेनेरेट भयो।");
+    console.log("✅ Success! अंग्रेजी ट्रान्सलेसनमार्फत नयाँ राशिफल तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ OpenRouter Error:", err.message);
@@ -147,33 +143,17 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
   }
 }
 
-// ४. स्मार्ट र पक्का म्यानेजर फंक्सन
-async function runSmartScraperAndGenerate() {
+// ३. मुख्य म्यानेजर फंक्सन
+async function runWorkflow() {
   const { date_en, day } = getNepaliDateText();
-  console.log(`🚀 ${date_en} (${day}) को लागि प्रक्रिया सुरु हुँदैछ...`);
+  console.log(`🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`);
 
-  // हाम्रो पात्रोबाट डाटा तानेर सीधै एआईमा पठाउने
-  let rawData = await scrapeHamroPatro();
-  if (rawData && rawData.length > 200) {
-    console.log("✅ 'हाम्रो पात्रो' बाट डाटा प्राप्त भयो, एआईमा पठाइँदैछ...");
-    return await processAndGenerate(rawData, date_en, day);
-  }
-
-  // यदि आएन भने नेपाली पात्रोबाट प्रयास गर्ने
-  console.log("⚠️ 'हाम्रो पात्रो' बाट आएन, 'नेपाली पात्रो' मा प्रयास गर्दै...");
-  let backupData = await scrapeNepaliPatro();
-  if (backupData && backupData.length > 200) {
-    console.log("✅ 'नेपाली पात्रो' बाट डाटा प्राप्त भयो, एआईमा पठाइँदैछ...");
-    return await processAndGenerate(backupData, date_en, day);
-  }
-
-  // यदि दुवैबाट ताkes भएन भने पनि एआईको आफ्नै वैदिक ज्ञान प्रयोग गरेर आजको ताजा राशिफल जेनेरेट गराउने (कहिल्यै फेल नहुने ब्याकअप)
-  console.log("⚠️ साइटबाट सिधै तानेन, एआईको वैदिक मोड्युलबाट जेनेरेट गर्दै...");
-  return await processAndGenerate("", date_en, day);
+  const rawData = await scrapeData();
+  return await processAndGenerate(rawData, date_en, day);
 }
 
 cron.schedule('0 4 * * *', () => {
-  runSmartScraperAndGenerate();
+  runWorkflow();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
 app.get("/api/rasifal", (req, res) => {
@@ -184,7 +164,7 @@ app.get("/api/rasifal", (req, res) => {
 });
 
 app.get("/api/generate-now", async (req, res) => {
-  const success = await runSmartScraperAndGenerate();
+  const success = await runWorkflow();
   if (success) {
     res.json({ status: "success", message: "सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
   } else {
@@ -195,6 +175,6 @@ app.get("/api/generate-now", async (req, res) => {
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   if (!cache.data) {
-    await runSmartScraperAndGenerate();
+    await runWorkflow();
   }
 });
