@@ -29,7 +29,7 @@ function getNepaliDateText() {
   };
 }
 
-// साइटबाट डाटा तान्ने (३ पटकसम्म प्रयास गर्ने)
+// सुरक्षा र ३ पटकसम्म रिट्राइ गर्ने स्क्र्यापिङ फंक्सन
 async function scrapeWithRetry(url, name) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -52,17 +52,18 @@ async function scrapeWithRetry(url, name) {
       }
     } catch (err) {
       console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 3000));
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 3000)); // ३ सेकेन्ड पर्खिने
     }
   }
   return { success: false, text: null };
 }
 
+// मुख्य डाटा फेच गर्ने म्यानेजर (हाम्रो पात्रो ➔ नेपाली पात्रो)
 async function fetchRawData() {
   let result = await scrapeWithRetry("https://www.hamropatro.com/rashifal", "हाम्रो पात्रो");
   if (result.success) return { data: result.text, source: "HamroPatro" };
 
-  console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
+  console.log("⚠️ 'हाम्रो पात्रो' मा ३ वटै प्रयास असफल, 'नेपाली पात्रो' ब्याकअपमा जाँदैछ...");
   let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
   if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
@@ -93,7 +94,6 @@ async function callOpenRouterWithRetry(promptText) {
     } catch (err) {
       console.warn(`⚠️ AI प्रयास ${attempt} असफल (Status: ${err.response?.status || err.message})`);
       if (attempt < 3) {
-        // ४२९ एरर आएमा अलि बढी समय (५ सेकेन्ड) पर्खेर फेरि ट्राइ गर्ने
         const waitTime = err.response?.status === 429 ? 6000 : 3000;
         console.log(`⏳ ${waitTime/1000} सेकेन्ड पर्खिंदै...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -104,27 +104,26 @@ async function callOpenRouterWithRetry(promptText) {
   }
 }
 
-// एआई प्रशोधन र चिया पसल शैलीको भाषा रूपान्तरण
+// दुई-चरण (Two-Step): नेपाली -> अंग्रेजी बुझ्ने -> चिया पसल शैलीको सरल नेपालीमा रूपान्तरण
 async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return false;
   }
 
-  // तपाईंले भन्नुभए अनुसार 'Loading...' म्यासेज राखिएको छ
   let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
 
-  const prompt = `You are a friendly, expert astrologer who speaks like a close friend chatting casually over tea (चिया पसलको मीठो र सजिलो बोलचालको भाषा). 
-Step 1: Read the raw scraped horoscope data and understand its meaning in English.
-Step 2: Rewrite each of the 12 zodiac signs in **extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ)**. Avoid heavy, robotic, or overly official words. Make it sound warm and easy to read.
+  const prompt = `You are an expert astrologer and content writer. 
+Step 1: First, read the following raw scraped horoscope data in Nepali, understand its core astrological meaning, and translate its essence into English internally.
+Step 2: Then, using that English understanding, rewrite each of the 12 zodiac signs into **extremely simple, natural, and conversational Nepali language (जसरी साथीसँग चिया खाँदै गफ गरिन्छ)**. 
 
-📌 Raw Data:
+📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 
 ✅ Strict Rules for the Nepali Output:
 1. **Each zodiac sign must have EXACTLY 4 sentences.**
-2. Completely fresh and original writing (no direct copying).
-3. Use everyday spoken words.
+2. Completely fresh, original writing (do not copy the original words directly).
+3. Use everyday spoken words, avoid heavy or official Sanskrit words.
 4. Never include the zodiac sign's name inside the prediction text or at the beginning.
 5. Do not start sentences with phrases like "आजको दिन" or "यस दिन".
 
@@ -136,17 +135,17 @@ Return ONLY a valid JSON object matching this exact structure:
   "status_message": "${statusMessage}",
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"}
+    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"}
   ]
 }
 
@@ -157,7 +156,7 @@ Return ONLY a valid JSON object matching this exact structure:
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! चिया पसल शैलीमा नयाँ राशिफल तयार भयो।");
+    console.log("✅ Success! दुई-चरण (Two-Step) ट्रान्सलेसनमार्फत नयाँ राशिफल तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ OpenRouter Error Final Failure:", err.message);
@@ -174,6 +173,7 @@ async function runWorkflow() {
   return await processAndGenerate(rawData, date_en, day, source);
 }
 
+// बिहान ठ्याक्कै ४ बजे चल्ने सेड्युल
 cron.schedule('0 4 * * *', () => {
   runWorkflow();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
