@@ -19,9 +19,10 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// तपाईंले पठाउनुभएको नयाँ र शक्तिशाली फ्रि मोडलहरूको लिस्ट (अटो-फालब्याकको लागि)
+// तपाईंको मेन मोडलका दुवै नामहरूलाई प्राथमिकता दिएर राख्दै, त्यसपछि अन्य ब्याकअप मोडलहरू
 const FREE_AI_MODELS = [
   "openai/gpt-oss-20b:free",
+  "openai/gpt-oss-20b",
   "google/gemma-4-26b-a4b-it:free",
   "google/gemma-4-31b-it:free",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
@@ -41,13 +42,11 @@ function getNepaliDateText() {
   };
 }
 
-// रेन्डम टाइम पर्खिने फंक्सन (मान्छेले चलाएको जस्तो देखाउन)
 const randomDelay = (min = 3000, max = 6000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
 };
 
-// सुरक्षित स्क्र्यापिङ (रेन्डम ग्याप सहित)
 async function scrapeWithRetry(url, name) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -88,7 +87,6 @@ async function fetchRawData() {
   return { data: null, source: "None" };
 }
 
-// एउटा मोडल फेल भए अर्को मोडलमा अटो-सविच हुने एआई फंक्सन
 async function callOpenRouterWithFallback(promptText) {
   for (const model of FREE_AI_MODELS) {
     try {
@@ -117,7 +115,6 @@ async function callOpenRouterWithFallback(promptText) {
   throw new Error("❌ सबै फ्रि AI मोडलहरू असफल भए!");
 }
 
-// दुई-चरण (Two-Step) प्रशोधन
 async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
@@ -149,7 +146,7 @@ Return ONLY a valid JSON object matching this exact structure:
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
@@ -169,7 +166,7 @@ Return ONLY a valid JSON object matching this exact structure:
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! मल्टि-मोडल ब्याकअपसहित नयाँ राशिफल तयार भयो।");
+    console.log("✅ Success! तपाईंको मेन मोडलबाट सफलतापूर्वक राशिफल तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ All AI Models Failed:", err.message);
