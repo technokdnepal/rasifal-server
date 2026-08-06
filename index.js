@@ -3,6 +3,7 @@ const axios = require("axios");
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
+const puppeteer = require("puppeteer");
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -18,22 +19,84 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// राशिफल जेनेरेट गर्ने मुख्य फंक्सन (अति सरल र प्राकृतिक नेपाली भाषाको लागि अप्टिमाइज गरिएको)
-async function generateRasifal() {
+// नेपाली मिति र बार निकाल्ने हेल्पर फंक्सन
+function getNepaliDateText() {
+  const nepalNow = moment().tz("Asia/Kathmandu");
+  const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
+  const dayName = dayNames[nepalNow.format('dddd')];
+  return {
+    date_en: nepalNow.format('YYYY-MM-DD'),
+    day: dayName
+  };
+}
+
+// १. Puppeteer मार्फत 'हाम्रो पात्रो' बाट डाटा स्क्र्याप गर्ने फंक्सन
+async function scrapeHamroPatroWithPuppeteer() {
+  let browser = null;
+  try {
+    console.log("🔍 Puppeteer मार्फत 'हाम्रो पात्रो' खोल्दै...");
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+    const page = await browser.newPage();
+    
+    // युजर एजेन्ट सेट गर्ने ताकि वेबसाइटले बट (Bot) भनेर ब्लक नगरोस्
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    
+    await page.goto("https://www.hamropatro.com/rashifal", { waitUntil: "networkidle2", timeout: 30000 });
+    
+    // पेज पूर्ण रूपमा लोड भएपछि सम्पूर्ण टेक्स्ट तानेर ल्याउने
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    await browser.close();
+    
+    return bodyText;
+  } catch (err) {
+    console.error("❌ 'हाम्रो पात्रो' Puppeteer एरर:", err.message);
+    if (browser) await browser.close();
+    return null;
+  }
+}
+
+// २. Puppeteer मार्फत 'नेपाली पात्रो' (ब्याकअप) बाट डाटा स्क्र्याप गर्ने फंक्सन
+async function scrapeNepaliPatroWithPuppeteer() {
+  let browser = null;
+  try {
+    console.log("🔍 Puppeteer मार्फत 'नेपाली पात्रो' (ब्याकअप) खोल्दै...");
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    });
+    const page = await browser.newPage();
+    
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    
+    await page.goto("https://nepalipatro.com.np/nepali-rashifal", { waitUntil: "networkidle2", timeout: 30000 });
+    
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    await browser.close();
+    
+    return bodyText;
+  } catch (err) {
+    console.error("❌ 'नेपाली पात्रो' Puppeteer एरर:", err.message);
+    if (browser) await browser.close();
+    return null;
+  }
+}
+
+// ३. AI मार्फत प्रशोधन र जेनेरेट गर्ने फंक्सन
+async function processAndGenerate(rawContent, dateEn, dayName) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return false;
   }
 
-  const nepalNow = moment().tz("Asia/Kathmandu");
-  const dateKey = nepalNow.format('YYYY-MM-DD');
-  const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
-  const dayName = dayNames[nepalNow.format('dddd')];
+  const prompt = `तपाईं नेपालको एक प्रतिष्ठित र लोकप्रिय पत्रिकाका लागि दैनिक राशिफल लेख्ने अनुभवी ज्योतिषी हुनुहुन्छ। ${dateEn} (${dayName}) को लागि तल दिइएको वास्तविक राशिफलको स्रोत डेटालाई पढेर, त्यसको मुख्य सारलाई आधार मानी नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
 
-  // एआईलाई 'हाम्रो पात्रो' र 'नेपाली पात्रो' को जस्तै एकदमै सरल र बग्ने नेपाली भाषामा लेख्न कडा निर्देशन दिइएको प्रोम्प्ट
-  const prompt = `तपाईं नेपालको एक प्रतिष्ठित र लोकप्रिय पत्रिका (जस्तै हाम्रो पात्रो र कान्तिपुर) का लागि दैनिक राशिफल लेख्ने अनुभवी ज्योतिषी हुनुहुन्छ। आज अंग्रेजी मिति ${dateKey} र ${dayName} हो। यसको आधारमा नेपाली भाषामा १२ राशिका दैनिक राशिफल तयार गर्नुहोस्।
+📌 स्रोत डेटा (पात्रोबाट तानेको):
+${rawContent.substring(0, 8000)}
 
-📌 भाषा र लेखनशैली सम्बन्धी विशेष नियमहरू:
+✅ कडा नियमहरू:
 1. भाषा एकदमै सरल, सहज, बग्ने खालको (Flowing) र सर्वसाधारणले पढ्नेबित्तिकै बुझ्ने हुनुपर्छ। कडा वा अप्राकृतिक संस्कृत शब्दहरू प्रयोग नगर्नुहोस्।
 2. "हाम्रो पात्रो" को राशिफलमा जस्तै स्वास्थ्य, व्यापार/कर्मक्षेत्र, आर्थिक र पारिवारिक सम्बन्धलाई जोडेर व्यावहारिक भविष्यवाणी दिनुहोस्।
 3. प्रत्येक राशिका लागि ठ्याक्कै ४ वाक्य मात्र लेख्नुहोस् (न एक वाक्य बढी, न कम)।
@@ -44,8 +107,8 @@ async function generateRasifal() {
 
 JSON Format (date_np मा नेपाली विक्रम संवत् जस्तै '२०८३ साउन २१, बिहीबार' र date मा अंग्रेजी मिति '2026-08-06' राख्नुहोला):
 {
-  "date_np": "२०८३ साउन २१, बिहीबार",
-  "date": "${dateKey}",
+  "date_np": "यहाँ नेपाली मिति र बार लेख्नुहोस् (जस्तै: २०८३ साउन २१, बिहीबार)",
+  "date": "${dateEn}",
   "day": "${dayName}",
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "४ वाक्यको सरल र प्राकृतिक राशिफल..."},
@@ -66,7 +129,6 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
 ⚡ CRITICAL: Extra text वा markdown नदिनुहोस्, केवल valid JSON मात्र।`;
 
   try {
-    console.log(`🔄 ${dateKey} (${dayName}) को लागि प्राकृतिक भाषाको राशिफल जेनेरेट हुँदैछ...`);
     const response = await axios.post(
       "https://openrouter.ai/api/v1/chat/completions",
       {
@@ -88,7 +150,7 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
     const parsed = JSON.parse(cleanJson);
     
     cache = { data: parsed, last_updated: new Date().toISOString() };
-    console.log("✅ Success! नयाँ राशिफल सफलतापूर्वक सेभ भयो।");
+    console.log("✅ Success! Puppeteer र AI मार्फत नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो।");
     return true;
   } catch (err) {
     console.error("❌ OpenRouter Error:", err.message);
@@ -96,9 +158,61 @@ JSON Format (date_np मा नेपाली विक्रम संवत�
   }
 }
 
-// हरेक दिन बिहान ठ्याक्कै ३ बजे नयाँ राशिफल जेनेरेट हुने क्रोन जोब
-cron.schedule('0 3 * * *', () => {
-  generateRasifal();
+// ४. स्मार्ट रिट्राय लजिक (प्रोग्रेसिभ ग्यापसहित)
+async function runSmartScraperAndGenerate() {
+  const { date_en, day } = getNepaliDateText();
+
+  console.log(`🚀 ${date_en} (${day}) को लागि Puppeteer स्क्र्यापिङ सुरु हुँदैछ...`);
+
+  // प्रयास १: 'हाम्रो पात्रो' (पहिलो पटक)
+  let rawData = await scrapeHamroPatroWithPuppeteer();
+  if (rawData && rawData.includes(day)) {
+    console.log(`✅ 'हाम्रो पात्रो' मा ${day} को राशिफल भेटियो!`);
+    return await processAndGenerate(rawData, date_en, day);
+  }
+
+  // प्रयास २: ३० मिनेट पछि
+  console.log("⏳ पहिलो प्रयासमा भेटिएन, ३० मिनेटपछि फेरि प्रयास गर्दै...");
+  await new Promise(resolve => setTimeout(resolve, 30 * 60 * 1000));
+  rawData = await scrapeHamroPatroWithPuppeteer();
+  if (rawData && rawData.includes(day)) {
+    console.log(`✅ दोस्रो प्रयासमा राशिफल भेटियो!`);
+    return await processAndGenerate(rawData, date_en, day);
+  }
+
+  // प्रयास ३: १ घण्टा पछि
+  console.log("⏳ दोस्रो प्रयास पनि असफल, १ घण्टापछि फेरि प्रयास गर्दै...");
+  await new Promise(resolve => setTimeout(resolve, 60 * 60 * 1000));
+  rawData = await scrapeHamroPatroWithPuppeteer();
+  if (rawData && rawData.includes(day)) {
+    console.log(`✅ तेस्रो प्रयासमा राशिफल भेटियो!`);
+    return await processAndGenerate(rawData, date_en, day);
+  }
+
+  // प्रयास ४: थप १ घण्टा पछि (अन्तिम प्रयास हाम्रो पात्रोमा)
+  console.log("⏳ तेस्रो प्रयास पनि असफल, अन्तिमपटक हाम्रो पात्रोमा प्रयास गर्दै...");
+  await new Promise(resolve => setTimeout(resolve, 60 * 60 * 1000));
+  rawData = await scrapeHamroPatroWithPuppeteer();
+  if (rawData && rawData.includes(day)) {
+    console.log(`✅ हाम्रो पात्रोबाट अन्तिम प्रयासमा भेटियो!`);
+    return await processAndGenerate(rawData, date_en, day);
+  }
+
+  // यदि हाम्रो पात्रोबाट आएन भने 'नेपाली पात्रो' (ब्याकअप साइट) मा जाने
+  console.log("⚠️ 'हाम्रो पात्रो' मा भेटिएन। अब 'नेपाली पात्रो' (ब्याकअप) मा जाँदैछ...");
+  let backupData = await scrapeNepaliPatroWithPuppeteer();
+  if (backupData && backupData.includes(day)) {
+    console.log(`✅ 'नेपाली पात्रो' मा ${day} को राशिफल भेटियो!`);
+    return await processAndGenerate(backupData, date_en, day);
+  }
+
+  console.error("❌ सबै प्रयासहरू असफल भए!");
+  return false;
+}
+
+// ५. क्रोन जोब (हरेक दिन बिहान ४:०० बजे)
+cron.schedule('0 4 * * *', () => {
+  runSmartScraperAndGenerate();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
 
 // API Endpoints
@@ -110,10 +224,10 @@ app.get("/api/rasifal", (req, res) => {
 });
 
 app.get("/api/generate-now", async (req, res) => {
-  console.log("🛠️ म्यानुअल रूपमा राशिफल जेनेरेट गर्ने आदेश प्राप्त भयो...");
-  const success = await generateRasifal();
+  console.log("🛠️ म्यानुअल रूपमा Puppeteer स्क्र्यापिङ आदेश प्राप्त भयो...");
+  const success = await runSmartScraperAndGenerate();
   if (success) {
-    res.json({ status: "success", message: "नयाँ राशिफल सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
+    res.json({ status: "success", message: "सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
   } else {
     res.status(500).json({ status: "error", message: "जेनेरेट गर्न असफल भयो।" });
   }
@@ -122,6 +236,6 @@ app.get("/api/generate-now", async (req, res) => {
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   if (!cache.data) {
-    await generateRasifal(); 
+    await runSmartScraperAndGenerate();
   }
 });
