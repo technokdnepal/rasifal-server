@@ -19,6 +19,13 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
+// ओपन राउटरका फ्रि मोडलहरूको लिस्ट (एउटा बन्द भए अर्कोमा अटो-सविच हुन्छ)
+const FREE_AI_MODELS = [
+  "openai/gpt-oss-20b:free",
+  "google/gemma-2-9b-it:free",
+  "meta-llama/llama-3-8b-instruct:free"
+];
+
 function getNepaliDateText() {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
@@ -29,7 +36,13 @@ function getNepaliDateText() {
   };
 }
 
-// सुरक्षा र ३ पटकसम्म रिट्राइ गर्ने स्क्र्यापिङ फंक्सन
+// रेन्डम टाइम पर्खिने फंक्सन (सकभर मान्छेले चलाएको जस्तो देखाउन)
+const randomDelay = (min = 3000, max = 6000) => {
+  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
+  return new Promise(resolve => setTimeout(resolve, ms));
+};
+
+// सुरक्षित स्क्र्यापिङ (रेन्डम ग्याप सहित)
 async function scrapeWithRetry(url, name) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -52,33 +65,33 @@ async function scrapeWithRetry(url, name) {
       }
     } catch (err) {
       console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 3000)); // ३ सेकेन्ड पर्खिने
+      if (attempt < 3) await randomDelay(4000, 7000); // ४ देखि ७ सेकेन्ड रेन्डम पर्खिने
     }
   }
   return { success: false, text: null };
 }
 
-// मुख्य डाटा फेच गर्ने म्यानेजर (हाम्रो पात्रो ➔ नेपाली पात्रो)
 async function fetchRawData() {
   let result = await scrapeWithRetry("https://www.hamropatro.com/rashifal", "हाम्रो पात्रो");
   if (result.success) return { data: result.text, source: "HamroPatro" };
 
-  console.log("⚠️ 'हाम्रो पात्रो' मा ३ वटै प्रयास असफल, 'नेपाली पात्रो' ब्याकअपमा जाँदैछ...");
+  console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
+  await randomDelay(5000, 8000); // साइट फेਰ्दा अलि बढी ग्याप दिने
   let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
   if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
   return { data: null, source: "None" };
 }
 
-// OpenRouter मा 429 एरर आएमा Retry गर्ने फंक्सन
-async function callOpenRouterWithRetry(promptText) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
+// एउटा मोडल फेल भए अर्को फ्रि मोडल ट्राइ गर्ने AI फंक्सन
+async function callOpenRouterWithFallback(promptText) {
+  for (const model of FREE_AI_MODELS) {
     try {
-      console.log(`🤖 [AI प्रयास ${attempt}/3] OpenRouter लाई कल गर्दै...`);
+      console.log(`🤖 AI मोडल प्रयोग गर्दैछ: [${model}]`);
       const response = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
         {
-          model: "openai/gpt-oss-20b:free",
+          model: model,
           messages: [{ role: "user", content: promptText }]
         },
         { 
@@ -90,21 +103,16 @@ async function callOpenRouterWithRetry(promptText) {
           timeout: 45000 
         }
       );
-      return response.data;
+      return response.data; // सफल भएपछि यही डाटा फर्काउने
     } catch (err) {
-      console.warn(`⚠️ AI प्रयास ${attempt} असफल (Status: ${err.response?.status || err.message})`);
-      if (attempt < 3) {
-        const waitTime = err.response?.status === 429 ? 6000 : 3000;
-        console.log(`⏳ ${waitTime/1000} सेकेन्ड पर्खिंदै...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      } else {
-        throw err;
-      }
+      console.warn(`⚠️ मोडल [${model}] असफल भयो: ${err.response?.status || err.message}. अर्को मोडल ट्राइ गर्दै...`);
+      await randomDelay(2000, 4000);
     }
   }
+  throw new Error("❌ सबै फ्रि AI मोडलहरू असफल भए!");
 }
 
-// दुई-चरण (Two-Step): नेपाली -> अंग्रेजी बुझ्ने -> चिया पसल शैलीको सरल नेपालीमा रूपान्तरण
+// दुई-चरण (Two-Step) प्रशोधन
 async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
@@ -135,10 +143,10 @@ Return ONLY a valid JSON object matching this exact structure:
   "status_message": "${statusMessage}",
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
@@ -152,19 +160,18 @@ Return ONLY a valid JSON object matching this exact structure:
 ⚡ CRITICAL: Do not include any extra markdown or text, only output valid JSON.`;
 
   try {
-    const aiResponse = await callOpenRouterWithRetry(prompt);
+    const aiResponse = await callOpenRouterWithFallback(prompt);
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! दुई-चरण (Two-Step) ट्रान्सलेसनमार्फत नयाँ राशिफल तयार भयो।");
+    console.log("✅ Success! सुरक्षित र अटो-ब्याकअप सहित नयाँ राशिफल तयार भयो।");
     return true;
   } catch (err) {
-    console.error("❌ OpenRouter Error Final Failure:", err.message);
+    console.error("❌ All AI Models Failed:", err.message);
     return false;
   }
 }
 
-// मुख्य वर्कफ्लो म्यानेजर
 async function runWorkflow() {
   const { date_en, day } = getNepaliDateText();
   console.log(`🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`);
@@ -173,7 +180,6 @@ async function runWorkflow() {
   return await processAndGenerate(rawData, date_en, day, source);
 }
 
-// बिहान ठ्याक्कै ४ बजे चल्ने सेड्युल
 cron.schedule('0 4 * * *', () => {
   runWorkflow();
 }, { scheduled: true, timezone: "Asia/Kathmandu" });
