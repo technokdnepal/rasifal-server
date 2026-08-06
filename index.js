@@ -19,7 +19,6 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// तपाईंको मेन मोडलका दुवै नामहरूलाई प्राथमिकता दिएर राख्दै, त्यसपछि अन्य ब्याकअप मोडलहरू
 const FREE_AI_MODELS = [
   "openai/gpt-oss-20b:free",
   "openai/gpt-oss-20b",
@@ -87,30 +86,55 @@ async function fetchRawData() {
   return { data: null, source: "None" };
 }
 
+// प्रत्येक AI मोडललाई ३ पटकसम्म (३ सेकेन्ड ग्यापमा) ट्राइ गर्ने नयाँ लजिक
 async function callOpenRouterWithFallback(promptText) {
   for (const model of FREE_AI_MODELS) {
-    try {
-      console.log(`🤖 AI मोडल प्रयोग गर्दैछ: [${model}]`);
-      const response = await axios.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-          model: model,
-          messages: [{ role: "user", content: promptText }]
-        },
-        { 
-          headers: { 
-            "Authorization": `Bearer ${OR_KEY.trim()}`,
-            "HTTP-Referer": "https://render.com",
-            "X-Title": "Rashifal App"
+    let success = false;
+    let responseData = null;
+
+    // एउटै मोडललाई ३ पटकसम्म प्रयास गर्ने लूप
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`🤖 AI मोडल [${model}] प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
+        const response = await axios.post(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            model: model,
+            messages: [{ role: "user", content: promptText }]
           },
-          timeout: 45000 
+          { 
+            headers: { 
+              "Authorization": `Bearer ${OR_KEY.trim()}`,
+              "HTTP-Referer": "https://render.com",
+              "X-Title": "Rashifal App"
+            },
+            timeout: 45000 
+          }
+        );
+        responseData = response.data;
+        success = true;
+        break; // सफल भए यो लूपबाट बाहिर निस्कने
+      } catch (err) {
+        const errCode = err.response?.status || err.message;
+        console.warn(`⚠️ मोडल [${model}] प्रयास ${attempt} असफल (${errCode}).`);
+        
+        // यदि ४०२ (Insufficient Credits) आएको छ भने त्यो मोडलमा पुनः प्रयास नगरी सिधै अर्को मोडलमा जाने
+        if (err.response?.status === 402) {
+          console.warn(`💳 402 एरर देखिएकोले यो मोडल छोडेर अर्कोमा जाँदैछौं...`);
+          break; 
         }
-      );
-      return response.data;
-    } catch (err) {
-      console.warn(`⚠️ मोडल [${model}] असफल भयो: ${err.response?.status || err.message}. अर्को मोडल ट्राइ गर्दै...`);
-      await randomDelay(2000, 4000);
+
+        if (attempt < 3) {
+          console.log(`⏳ ३ सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
+          await new Promise(resolve => setTimeout(resolve, 3000)); // ठ ακ्कै ३ सेकेन्डको ग्याप
+        }
+      }
     }
+
+    if (success) {
+      return responseData; // यदि ३ प्रयासभित्र सफल भयो भने रिजल्ट फर्काउने
+    }
+    console.log(`🔄 मोडल [${model}] पूर्ण रूपमा असफल भयो, अर्को मोडलमा सर्दैछ...`);
   }
   throw new Error("❌ सबै फ्रि AI मोडलहरू असफल भए!");
 }
@@ -135,7 +159,7 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 2. Completely fresh, original writing (do not copy the original words directly).
 3. Use everyday spoken words, avoid heavy or official Sanskrit words.
 4. Never include the zodiac sign's name inside the prediction text or at the beginning.
-5. Do not start sentences with phrases like "आजको दिन" or "यस दिन".
+5. Do not start sentences with phrases like "आजको दिन" या "यस दिन".
 
 Return ONLY a valid JSON object matching this exact structure:
 {
@@ -147,15 +171,15 @@ Return ONLY a valid JSON object matching this exact structure:
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
-    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"}
+    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Capricorn", "sign_np": "मकर", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"}
   ]
 }
 
@@ -166,7 +190,7 @@ Return ONLY a valid JSON object matching this exact structure:
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! तपाईंको मेन मोडलबाट सफलतापूर्वक राशिफल तयार भयो।");
+    console.log("✅ Success! राशिफल सफलतापूर्वक तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ All AI Models Failed:", err.message);
