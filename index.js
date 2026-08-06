@@ -19,15 +19,16 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
+// 🟢 Google Gemma लाई पहिलो प्राथमिकतामा राखिएको छ, त्यसपछि अन्य मोडलहरू
 const FREE_AI_MODELS = [
-  "openai/gpt-oss-20b:free",
-  "openai/gpt-oss-20b",
   "google/gemma-4-26b-a4b-it:free",
   "google/gemma-4-31b-it:free",
+  "google/gemma-2-9b-it:free",
+  "openai/gpt-oss-20b:free",
+  "openai/gpt-oss-20b",
   "nvidia/nemotron-3-ultra-550b-a55b:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "nvidia/nemotron-3-nano-30b-a3b:free",
-  "google/gemma-2-9b-it:free",
   "meta-llama/llama-3-8b-instruct:free"
 ];
 
@@ -86,13 +87,11 @@ async function fetchRawData() {
   return { data: null, source: "None" };
 }
 
-// प्रत्येक AI मोडललाई ३ पटकसम्म (३ सेकेन्ड ग्यापमा) ट्राइ गर्ने नयाँ लजिक
 async function callOpenRouterWithFallback(promptText) {
   for (const model of FREE_AI_MODELS) {
     let success = false;
     let responseData = null;
 
-    // एउटै मोडललाई ३ पटकसम्म प्रयास गर्ने लूप
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         console.log(`🤖 AI मोडल [${model}] प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
@@ -113,12 +112,11 @@ async function callOpenRouterWithFallback(promptText) {
         );
         responseData = response.data;
         success = true;
-        break; // सफल भए यो लूपबाट बाहिर निस्कने
+        break;
       } catch (err) {
         const errCode = err.response?.status || err.message;
         console.warn(`⚠️ मोडल [${model}] प्रयास ${attempt} असफल (${errCode}).`);
         
-        // यदि ४०२ (Insufficient Credits) आएको छ भने त्यो मोडलमा पुनः प्रयास नगरी सिधै अर्को मोडलमा जाने
         if (err.response?.status === 402) {
           console.warn(`💳 402 एरर देखिएकोले यो मोडल छोडेर अर्कोमा जाँदैछौं...`);
           break; 
@@ -126,13 +124,13 @@ async function callOpenRouterWithFallback(promptText) {
 
         if (attempt < 3) {
           console.log(`⏳ ३ सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
-          await new Promise(resolve => setTimeout(resolve, 3000)); // ठ ακ्कै ३ सेकेन्डको ग्याप
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
       }
     }
 
     if (success) {
-      return responseData; // यदि ३ प्रयासभित्र सफल भयो भने रिजल्ट फर्काउने
+      return responseData;
     }
     console.log(`🔄 मोडल [${model}] पूर्ण रूपमा असफल भयो, अर्को मोडलमा सर्दैछ...`);
   }
@@ -147,9 +145,9 @@ async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
 
   let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
 
-  const prompt = `You are an expert astrologer and content writer. 
-Step 1: First, read the following raw scraped horoscope data in Nepali, understand its core astrological meaning, and translate its essence into English internally.
-Step 2: Then, using that English understanding, rewrite each of the 12 zodiac signs into **extremely simple, natural, and conversational Nepali language (जसरी साथीसँग चिया खाँदै गफ गरिन्छ)**. 
+  const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
+Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
+Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
@@ -159,7 +157,7 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 2. Completely fresh, original writing (do not copy the original words directly).
 3. Use everyday spoken words, avoid heavy or official Sanskrit words.
 4. Never include the zodiac sign's name inside the prediction text or at the beginning.
-5. Do not start sentences with phrases like "आजको दिन" या "यस दिन".
+5. Do not start sentences with phrases like "आजको दिन" वा "यस दिन".
 
 Return ONLY a valid JSON object matching this exact structure:
 {
@@ -169,7 +167,7 @@ Return ONLY a valid JSON object matching this exact structure:
   "status_message": "${statusMessage}",
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य።"},
     {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
@@ -190,7 +188,7 @@ Return ONLY a valid JSON object matching this exact structure:
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! राशिफल सफलतापूर्वक तयार भयो।");
+    console.log("✅ Success! Google Gemma मोडलबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ All AI Models Failed:", err.message);
