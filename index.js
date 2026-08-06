@@ -3,7 +3,7 @@ const axios = require("axios");
 const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
-const puppeteer = require("puppeteer");
+const cheerio = require("cheerio");
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -29,29 +29,39 @@ function getNepaliDateText() {
   };
 }
 
-// Puppeteer लन्च गर्ने सुरक्षित फंक्सन
-async function scrapeWithPuppeteer(url) {
-  let browser = null;
+// Axios + Cheerio मार्फत 'हाम्रो पात्रो' बाट डाटा तान्ने (क्रोम नचाहिने)
+async function scrapeHamroPatro() {
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable- accélérateur",
-        "--disable-gpu"
-      ]
+    console.log("🔍 Axios मार्फत 'हाम्रो पात्रो' बाट डाटा तान्दै...");
+    const { data } = await axios.get("https://www.hamropatro.com/rashifal", {
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9,ne;q=0.8"
+      },
+      timeout: 15000
     });
-    const page = await browser.newPage();
-    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    await browser.close();
-    return bodyText;
+    const $ = cheerio.load(data);
+    return $("body").text();
   } catch (err) {
-    console.error("❌ Puppeteer Scraping Error:", err.message);
-    if (browser) await browser.close();
+    console.error("❌ 'हाम्रो पात्रो' स्क्र्यापिङ एरर:", err.message);
+    return null;
+  }
+}
+
+// Axios + Cheerio मार्फत 'नेपाली पात्रो' (ब्याकअप) बाट डाटा तान्ने
+async function scrapeNepaliPatro() {
+  try {
+    console.log("🔍 Axios मार्फत 'नेपाली पात्रो' (ब्याकअप) बाट डाटा तान्दै...");
+    const { data } = await axios.get("https://nepalipatro.com.np/nepali-rashifal", {
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+      },
+      timeout: 15000
+    });
+    const $ = cheerio.load(data);
+    return $("body").text();
+  } catch (err) {
+    console.error("❌ 'नेपाली पात्रो' स्क्र्यापिङ एरर:", err.message);
     return null;
   }
 }
@@ -127,7 +137,7 @@ async function runSmartScraperAndGenerate() {
   console.log(`🚀 ${date_en} (${day}) को लागि स्क्र्यापिङ सुरु हुँदैछ...`);
 
   // हाम्रो पात्रोबाट प्रयास
-  let rawData = await scrapeWithPuppeteer("https://www.hamropatro.com/rashifal");
+  let rawData = await scrapeHamroPatro();
   if (rawData && rawData.includes(day)) {
     console.log(`✅ 'हाम्रो पात्रो' मा ${day} को राशिफल भेटियो!`);
     return await processAndGenerate(rawData, date_en, day);
@@ -135,7 +145,7 @@ async function runSmartScraperAndGenerate() {
 
   // ब्याकअप: नेपाली पात्रोबाट प्रयास
   console.log("⚠️ 'हाम्रो पात्रो' मा भेटिएन, 'नेपाली पात्रो' मा प्रयास गर्दै...");
-  let backupData = await scrapeWithPuppeteer("https://nepalipatro.com.np/nepali-rashifal");
+  let backupData = await scrapeNepaliPatro();
   if (backupData && backupData.includes(day)) {
     console.log(`✅ 'नेपाली पात्रो' मा ${day} को राशिफल भेटियो!`);
     return await processAndGenerate(backupData, date_en, day);
