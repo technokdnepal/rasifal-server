@@ -19,9 +19,14 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// ओपन राउटरका फ्रि मोडलहरूको लिस्ट (एउटा बन्द भए अर्कोमा अटो-सविच हुन्छ)
+// तपाईंले पठाउनुभएको नयाँ र शक्तिशाली फ्रि मोडलहरूको लिस्ट (अटो-फालब्याकको लागि)
 const FREE_AI_MODELS = [
   "openai/gpt-oss-20b:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "google/gemma-4-31b-it:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-nano-30b-a3b:free",
   "google/gemma-2-9b-it:free",
   "meta-llama/llama-3-8b-instruct:free"
 ];
@@ -36,7 +41,7 @@ function getNepaliDateText() {
   };
 }
 
-// रेन्डम टाइम पर्खिने फंक्सन (सकभर मान्छेले चलाएको जस्तो देखाउन)
+// रेन्डम टाइम पर्खिने फंक्सन (मान्छेले चलाएको जस्तो देखाउन)
 const randomDelay = (min = 3000, max = 6000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -65,7 +70,7 @@ async function scrapeWithRetry(url, name) {
       }
     } catch (err) {
       console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await randomDelay(4000, 7000); // ४ देखि ७ सेकेन्ड रेन्डम पर्खिने
+      if (attempt < 3) await randomDelay(4000, 7000);
     }
   }
   return { success: false, text: null };
@@ -76,14 +81,14 @@ async function fetchRawData() {
   if (result.success) return { data: result.text, source: "HamroPatro" };
 
   console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
-  await randomDelay(5000, 8000); // साइट फेਰ्दा अलि बढी ग्याप दिने
+  await randomDelay(5000, 8000);
   let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
   if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
   return { data: null, source: "None" };
 }
 
-// एउटा मोडल फेल भए अर्को फ्रि मोडल ट्राइ गर्ने AI फंक्सन
+// एउटा मोडल फेल भए अर्को मोडलमा अटो-सविच हुने एआई फंक्सन
 async function callOpenRouterWithFallback(promptText) {
   for (const model of FREE_AI_MODELS) {
     try {
@@ -103,7 +108,7 @@ async function callOpenRouterWithFallback(promptText) {
           timeout: 45000 
         }
       );
-      return response.data; // सफल भएपछि यही डाटा फर्काउने
+      return response.data;
     } catch (err) {
       console.warn(`⚠️ मोडल [${model}] असफल भयो: ${err.response?.status || err.message}. अर्को मोडल ट्राइ गर्दै...`);
       await randomDelay(2000, 4000);
@@ -144,9 +149,9 @@ Return ONLY a valid JSON object matching this exact structure:
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
+    {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
+    {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Virgo", "sign_np": "कन्या", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Libra", "sign_np": "तुला", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
     {"sign": "Scorpio", "sign_np": "वृश्चिक", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य。"},
@@ -164,7 +169,7 @@ Return ONLY a valid JSON object matching this exact structure:
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! सुरक्षित र अटो-ब्याकअप सहित नयाँ राशिफल तयार भयो।");
+    console.log("✅ Success! मल्टि-मोडल ब्याकअपसहित नयाँ राशिफल तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ All AI Models Failed:", err.message);
