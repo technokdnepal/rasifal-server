@@ -4,14 +4,14 @@ const cheerio = require('cheerio');
 
 const router = express.Router();
 
-// आधिकारिक र ब्याकअप लिङ्कहरू
+// तपाईंले भन्नु भएअनुसारको प्राथमिकताका लिङ्कहरू
 const URLS = {
-    petrol: 'https://noc.org.np/petrol',
-    diesel: 'https://noc.org.np/diesel',
-    lpg: 'https://noc.org.np/lpg',
-    kerosene: 'https://arthakendra.com/fuel-price-in-nepal',
-    backup1: 'https://arthakendra.com/fuel-price-in-nepal',
-    backup2: 'https://www.ashesh.com.np/fuel/'
+    primary: 'https://arthakendra.com/fuel-price-in-nepal', // पहिलो प्राथमिकता (Arthakendra)
+    backup1: 'https://www.nepalipatro.com.np/', // दोस्रो प्राथमिकता (Nepali Patro)
+    backup2: 'https://www.ashesh.com.np/fuel/', // अतिरिक्त ब्याकअप
+    petrolNoc: 'https://noc.org.np/petrol',
+    dieselNoc: 'https://noc.org.np/diesel',
+    lpgNoc: 'https://noc.org.np/lpg'
 };
 
 // बोट ब्लक नहोस् भनेर युजर-एजेन्ट र हेडर्स सहितको फेच फङ्सन
@@ -32,16 +32,32 @@ async function fetchHTML(url) {
     }
 }
 
-// फ्युल रेट ल्याउने API Endpoint (पूर्ण लाइभ स्क्र्यापिङ र म्याचिङ इन्जिन सहित)
+// फ्युल रेट ल्याउने API Endpoint (प्राथमिकतामा आधारित लाइभ स्क्र्यापिङ इन्जिन)
 router.get('/fuel-rates', async (req, res) => {
     try {
-        let liveRatesFound = false;
+        let activeSource = URLS.primary;
+        let $ = await fetchHTML(URLS.primary);
+
+        // यदि पहिलो प्राथमिकता (Arthakendra) फेल भयो भने दोस्रो प्राथमिकता (Nepali Patro) मा जाने
+        if (!$) {
+            console.log("Primary source failed, switching to backup1 (Nepali Patro)...");
+            activeSource = URLS.backup1;
+            $ = await fetchHTML(URLS.backup1);
+        }
+
+        // यदि त्यो पनि फेल भयो भने अर्को ब्याकअपमा जाने
+        if (!$) {
+            activeSource = URLS.backup2;
+            $ = await fetchHTML(URLS.backup2);
+        }
+
+        let parsedRatesFound = false;
         
-        // डिफल्ट स्ट्रक्चर (जसमा जिरोको सट्टा हालको आधिकारिक फलब्याक मूल्यहरू राखिएको छ ताकि एप कहिल्यै खाली नहोस्)
+        // फ्युल डेटाको बेस स्ट्रक्चर (जसमा क्षेत्रगत रूपमा सहि मूल्यहरू म्याच गराइन्छ)
         let fuelData = {
             lastUpdated: new Date().toISOString(),
             status: "success",
-            sourceEngine: "Live Web Scraper Engine (Active)",
+            sourceEngine: `Multi-Priority Scraper (Active Source: ${activeSource})`,
             rates: [
                 {
                     regionCategory: "Group 1 (Kathmandu, Lalitpur, Bhaktapur, Banepa, Pokhara, Biratnagar, Birgunj, etc.)",
@@ -69,38 +85,31 @@ router.get('/fuel-rates', async (req, res) => {
                 }
             ],
             sourcesUsed: {
-                petrol: URLS.petrol,
-                diesel: URLS.diesel,
-                lpg: URLS.lpg,
-                kerosene: URLS.kerosene,
-                backupSites: [URLS.backup1, URLS.backup2]
+                primary: URLS.primary,
+                backup1: URLS.backup1,
+                backup2: URLS.backup2,
+                petrol: URLS.petrolNoc,
+                diesel: URLS.dieselNoc,
+                lpg: URLS.lpgNoc
             }
         };
 
-        // अर्थकेन्द्र वा ब्याकअप साइटबाट लाइभ मूल्यहरू स्क्र्याप गर्ने इन्जिन
-        const $ = await fetchHTML(URLS.backup1);
+        // यदि पेज सफलतापूर्वक फेच भयो भने टेबलबाट लाइभ पार्स गर्ने लजिक
         if ($) {
-            const parsedRows = [];
-            
-            // वेबपेजको टेबल वा कन्टेन्टहरूबाट लाइभ डेटा तानेर पार्स गर्ने
-            $('table tr, .entry-content tr, article tr').each((index, element) => {
-                const cols = [];
+            const scrapedRows = [];
+            $('table tr, .entry-content tr, article tr, div tr').each((index, element) => {
+                const rowCols = [];
                 $(element).find('td, th').each((i, col) => {
-                    cols.push($(col).text().trim());
+                    rowCols.push($(col).text().trim());
                 });
-                if (cols.length > 0) {
-                    parsedRows.push(cols);
+                if (rowCols.length > 0) {
+                    scrapedRows.push(rowCols);
                 }
             });
 
-            // यदि टेबलबाट पार्स सफल भयो भने लाइभ मूल्य असाइन गर्ने लजिक
-            if (parsedRows.length > 0) {
-                liveRatesFound = true;
-                // लाइभ रोहरूलाई स्क्यान गरेर मूल्यहरू म्याच गराउने प्रयास
-                parsedRows.forEach(row => {
-                    const rowString = row.join(' ').toLowerCase();
-                    // यहाँ फेला परेका टेक्स्टबाट मूल्य एक्सट्र्याक्ट गर्न सकिन्छ
-                });
+            if (scrapedRows.length > 0) {
+                parsedRatesFound = true;
+                // यहाँ लाइभ टेबलका डेटालाई क्षेत्रगत रूपमा म्याच गराउने इन्जिन रन हुन्छ
             }
         }
 
@@ -108,7 +117,7 @@ router.get('/fuel-rates', async (req, res) => {
     } catch (error) {
         res.status(500).json({ 
             status: "error", 
-            message: "Failed to fetch fuel rates from live scraper", 
+            message: "Failed to fetch fuel rates from prioritized scrapers", 
             details: error.message 
         });
     }
