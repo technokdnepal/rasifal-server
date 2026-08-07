@@ -224,6 +224,11 @@ app.get("/api/generate-now", async (req, res) => {
   }
 });
 
+// === यहाँ नयाँ फ्युल रेटको रुट थपिएको छ (तपाईंको पुरानो राशिफलको कोड सुरक्षित छ) ===
+const fuelRateRouter = require('./fuelRate');
+app.use('/api', fuelRateRouter);
+// =========================================================================
+
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   if (!cache.data) {
