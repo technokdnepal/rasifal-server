@@ -7,7 +7,7 @@ const router = express.Router();
 // तपाईंले भन्नु भएअनुसारको प्राथमिकताका लिङ्कहरू
 const URLS = {
     primary: 'https://arthakendra.com/fuel-price-in-nepal', // पहिलो प्राथमिकता (Arthakendra)
-    backup1: 'https://www.nepalipatro.com.np/', // दोस्रो प्राथमिकता (Nepali Patro)
+    backup1: 'https://nepalipatro.com.np/petrol-price', // दोस्रो प्राथमिकता (Nepali Patro)
     backup2: 'https://www.ashesh.com.np/fuel/', // अतिरिक्त ब्याकअप
     petrolNoc: 'https://noc.org.np/petrol',
     dieselNoc: 'https://noc.org.np/diesel',
