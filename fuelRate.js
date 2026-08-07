@@ -53,15 +53,15 @@ router.get('/fuel-rates', async (req, res) => {
 
         let parsedRatesFound = false;
         
-        // फ्युल डेटाको बेस स्ट्रक्चर (नेपाल आयल निगमको आधिकारिक क्षेत्रगत समूह र सही मूल्य अनुसार सच्याइएको)
+        // फ्युल डेटाको बेस स्ट्रक्चर (तपाईंले दिएको आधिकारिक समूह र सहरहरूको सूची अनुसार पूर्ण रूपमा मिलाइएको)
         let fuelData = {
             lastUpdated: new Date().toISOString(),
             status: "success",
             sourceEngine: `Multi-Priority Scraper (Active Source: ${activeSource})`,
             rates: [
                 {
-                    regionCategory: "Group 1 (Charali, Biratnagar, Janakpur, Amlekhgunj, Bhairahawa, Nepalgunj, Dhangadhi, Birgunj)",
-                    cities: ["Charali", "Biratnagar", "Janakpur", "Amlekhgunj", "Bhairahawa", "Nepalgunj", "Dhangadhi", "Birgunj"],
+                    regionCategory: "Group 1 (Charali, Biratnagar, Mahendranagar (Dhanusa), Birgunj, Amlekhjung, Bhalbari, Nepalgung, Dhangadi)",
+                    cities: ["Charali", "Biratnagar", "Mahendranagar (Dhanusa)", "Birgunj", "Amlekhjung", "Bhalbari", "Nepalgunj", "Dhangadhi"],
                     petrol: { price: 197.50, change: "+3", trend: "up" },
                     diesel: { price: 197.50, change: "+5", trend: "up" },
                     lpgGas: { price: 2060, change: "0", trend: "stable" },
@@ -76,8 +76,8 @@ router.get('/fuel-rates', async (req, res) => {
                     kerosene: { price: 199.00, change: "+5", trend: "up" }
                 },
                 {
-                    regionCategory: "Group 3 (Kathmandu, Lalitpur, Bhaktapur, Banepa, Pokhara, Dipayal, etc.)",
-                    cities: ["Kathmandu", "Lalitpur", "Bhaktapur", "Banepa", "Pokhara", "Dipayal"],
+                    regionCategory: "Group 3 (Kathmandu, Pokhara, Dipayal)",
+                    cities: ["Kathmandu", "Pokhara", "Dipayal"],
                     petrol: { price: 200.00, change: "+3", trend: "up" },
                     diesel: { price: 200.00, change: "+5", trend: "up" },
                     lpgGas: { price: 2060, change: "0", trend: "stable" },
