@@ -53,35 +53,35 @@ router.get('/fuel-rates', async (req, res) => {
 
         let parsedRatesFound = false;
         
-        // फ्युल डेटाको बेस स्ट्रक्चर (जसमा क्षेत्रगत रूपमा सहि मूल्यहरू म्याच गराइन्छ)
+        // फ्युल डेटाको बेस स्ट्रक्चर (नेपाल आयल निगमको आधिकारिक क्षेत्रगत समूह र सही मूल्य अनुसार सच्याइएको)
         let fuelData = {
             lastUpdated: new Date().toISOString(),
             status: "success",
             sourceEngine: `Multi-Priority Scraper (Active Source: ${activeSource})`,
             rates: [
                 {
-                    regionCategory: "Group 1 (Kathmandu, Lalitpur, Bhaktapur, Banepa, Pokhara, Biratnagar, Birgunj, etc.)",
-                    cities: ["Kathmandu", "Lalitpur", "Bhaktapur", "Banepa", "Pokhara", "Biratnagar", "Birgunj"],
-                    petrol: { price: 200, change: "+3", trend: "up" },
-                    diesel: { price: 200, change: "+5", trend: "up" },
-                    lpgGas: { price: 2060, change: "0", trend: "stable" },
-                    kerosene: { price: 200, change: "+5", trend: "up" }
-                },
-                {
-                    regionCategory: "Group 2 (Surkhet, Dang)",
-                    cities: ["Surkhet", "Dang"],
-                    petrol: { price: 199, change: "+3", trend: "up" },
-                    diesel: { price: 199, change: "+5", trend: "up" },
-                    lpgGas: { price: 2060, change: "0", trend: "stable" },
-                    kerosene: { price: 199, change: "+5", trend: "up" }
-                },
-                {
-                    regionCategory: "Group 3 (Charali, Biratnagar, Janakpur, Amlekhgunj, Pokhara, Bhairahawa, Nepalgunj, Dhangadhi)",
-                    cities: ["Charali", "Janakpur", "Amlekhgunj", "Bhairahawa", "Nepalgunj", "Dhangadhi"],
+                    regionCategory: "Group 1 (Charali, Biratnagar, Janakpur, Amlekhgunj, Bhairahawa, Nepalgunj, Dhangadhi, Birgunj)",
+                    cities: ["Charali", "Biratnagar", "Janakpur", "Amlekhgunj", "Bhairahawa", "Nepalgunj", "Dhangadhi", "Birgunj"],
                     petrol: { price: 197.50, change: "+3", trend: "up" },
                     diesel: { price: 197.50, change: "+5", trend: "up" },
                     lpgGas: { price: 2060, change: "0", trend: "stable" },
                     kerosene: { price: 197.50, change: "+5", trend: "up" }
+                },
+                {
+                    regionCategory: "Group 2 (Surkhet, Dang)",
+                    cities: ["Surkhet", "Dang"],
+                    petrol: { price: 199.00, change: "+3", trend: "up" },
+                    diesel: { price: 199.00, change: "+5", trend: "up" },
+                    lpgGas: { price: 2060, change: "0", trend: "stable" },
+                    kerosene: { price: 199.00, change: "+5", trend: "up" }
+                },
+                {
+                    regionCategory: "Group 3 (Kathmandu, Lalitpur, Bhaktapur, Banepa, Pokhara, Dipayal, etc.)",
+                    cities: ["Kathmandu", "Lalitpur", "Bhaktapur", "Banepa", "Pokhara", "Dipayal"],
+                    petrol: { price: 200.00, change: "+3", trend: "up" },
+                    diesel: { price: 200.00, change: "+5", trend: "up" },
+                    lpgGas: { price: 2060, change: "0", trend: "stable" },
+                    kerosene: { price: 200.00, change: "+5", trend: "up" }
                 }
             ],
             sourcesUsed: {
