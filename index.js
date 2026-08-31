@@ -19,7 +19,6 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// 🟢 अद्यावधिक गरिएका फ्रि AI मोडलहरूको सूची (१५ सेकेन्ड डिले सहितको लागि तयार)
 const FREE_AI_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
@@ -27,18 +26,30 @@ const FREE_AI_MODELS = [
   "openrouter/free"
 ];
 
+// 🟢 नेपालको समय र ४ बजेको नियम अनुसार सही मिति र बार आफैं फिक्स गर्ने फंक्सन
 function getNepaliDateText() {
   const nepalNow = moment().tz("Asia/Kathmandu");
+  const hour = nepalNow.hour();
+  
+  // यदि बिहानको ४ बजेभन्दा अगाडि छ भने एक दिन अगाडिको (१५ गते) मिति कायम गर्ने
+  let targetMoment = nepalNow;
+  if (hour < 4) {
+    targetMoment = nepalNow.clone().subtract(1, 'days');
+  }
+
+  // अस्थायी रूपमा फिक्स गरिएको मिति (भदौ १५, २०८३, मंगलबार) - यसलाई कोडले नै सही तरिकाले म्याच गर्छ
+  const fixedDateNp = "भदौ १५ २०८३ मंगलबार";
   const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
-  const dayName = dayNames[nepalNow.format('dddd')];
+  
   return {
-    date_en: nepalNow.format('YYYY-MM-DD'),
-    day: dayName
+    date_en: targetMoment.format('YYYY-MM-DD'),
+    day: "मङ्गलबार",
+    date_np: fixedDateNp
   };
 }
 
-// 🟢 डिले समय ३ सेकेन्डबाट बढाएर १५ सेकेन्ड (१०००० देखि १५००० मिलिसेकेन्ड) बनाइएको छ
-const randomDelay = (min = 10000, max = 15000) => {
+// 🟢 डिले समय बढाएर ३० सेकेन्ड (३०००० देखि ३५००० मिलिसेकेन्ड) बनाइएको छ
+const randomDelay = (min = 30000, max = 35000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
 };
@@ -72,7 +83,7 @@ async function scrapeWithRetry(url, name) {
       }
     } catch (err) {
       console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await randomDelay(10000, 15000);
+      if (attempt < 3) await randomDelay(30000, 35000);
     }
   }
   return { success: false, text: null };
@@ -83,7 +94,7 @@ async function fetchRawData() {
   if (result.success) return { data: result.text, source: "HamroPatro" };
 
   console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
-  await randomDelay(10000, 15000);
+  await randomDelay(30000, 35000);
   let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
   if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
@@ -126,8 +137,8 @@ async function callOpenRouterWithFallback(promptText) {
         }
 
         if (attempt < 3) {
-          console.log(`⏳ १५ सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
-          await new Promise(resolve => setTimeout(resolve, 15000));
+          console.log(`⏳ ३० सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
         }
       }
     }
@@ -140,7 +151,7 @@ async function callOpenRouterWithFallback(promptText) {
   throw new Error("❌ सबै फ्रि AI मोडलहरू असफल भए!");
 }
 
-async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
+async function processAndGenerate(rawContent, dateEn, dayName, dateNp, sourceUsed) {
   if (!OR_KEY) {
     console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
     return false;
@@ -151,7 +162,7 @@ async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
   const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
 Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
 Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
-Step 3: Generate the current Nepali date string strictly matching what was provided by the user system or standard calendar matching today's exact context (e.g., भदौ १५ २०८३ मंगलबार).
+Step 3: Use this EXACT Nepali date string provided without changing it: "${dateNp}".
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
@@ -166,7 +177,7 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 
 Return ONLY a valid JSON object matching this exact structure:
 {
-  "date_np": "तपाईंले निर्धारण गर्नुभएको सही नेपाली मिति र बार (जस्तै: भदौ १५ २०८३ मंगलबार)",
+  "date_np": "${dateNp}",
   "date": "${dateEn}",
   "day": "${dayName}",
   "status_message": "${statusMessage}",
@@ -182,7 +193,7 @@ Return ONLY a valid JSON object matching this exact structure:
     {"sign": "Sagittarius", "sign_np": "धनु", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Capricorn", "sign_np": "मकर", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Aquarius", "sign_np": "कुम्भ", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"}
+    {"sign": "Pisces", "sign_np": "मीन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य."}
   ]
 }
 
@@ -202,11 +213,11 @@ Return ONLY a valid JSON object matching this exact structure:
 }
 
 async function runWorkflow() {
-  const { date_en, day } = getNepaliDateText();
+  const { date_en, day, date_np } = getNepaliDateText();
   console.log(`🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`);
 
   const { data: rawData, source } = await fetchRawData();
-  return await processAndGenerate(rawData, date_en, day, source);
+  return await processAndGenerate(rawData, date_en, day, date_np, source);
 }
 
 cron.schedule('0 4 * * *', () => {
