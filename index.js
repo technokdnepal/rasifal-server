@@ -19,7 +19,7 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// 🟢 अद्यावधिक गरिएका फ्रि AI मोडलहरूको सूची
+// 🟢 अद्यावधिक गरिएका फ्रि AI मोडलहरूको सूची (१५ सेकेन्ड डिले सहितको लागि तयार)
 const FREE_AI_MODELS = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
@@ -37,7 +37,8 @@ function getNepaliDateText() {
   };
 }
 
-const randomDelay = (min = 3000, max = 6000) => {
+// 🟢 डिले समय ३ सेकेन्डबाट बढाएर १५ सेकेन्ड (१०००० देखि १५००० मिलिसेकेन्ड) बनाइएको छ
+const randomDelay = (min = 10000, max = 15000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
 };
@@ -71,7 +72,7 @@ async function scrapeWithRetry(url, name) {
       }
     } catch (err) {
       console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await randomDelay(4000, 7000);
+      if (attempt < 3) await randomDelay(10000, 15000);
     }
   }
   return { success: false, text: null };
@@ -82,7 +83,7 @@ async function fetchRawData() {
   if (result.success) return { data: result.text, source: "HamroPatro" };
 
   console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
-  await randomDelay(5000, 8000);
+  await randomDelay(10000, 15000);
   let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
   if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
@@ -125,8 +126,8 @@ async function callOpenRouterWithFallback(promptText) {
         }
 
         if (attempt < 3) {
-          console.log(`⏳ ३ सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          console.log(`⏳ १५ सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
+          await new Promise(resolve => setTimeout(resolve, 15000));
         }
       }
     }
@@ -150,7 +151,7 @@ async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
   const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
 Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
 Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
-Step 3: Generate the current Nepali date string accurately in this exact format only: "भदौ १५ २०८३ मंगलबार" (Month name in Nepali words, date number, year, and day).
+Step 3: Generate the current Nepali date string strictly matching what was provided by the user system or standard calendar matching today's exact context (e.g., भदौ १५ २०८३ मंगलबार).
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
@@ -165,7 +166,7 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 
 Return ONLY a valid JSON object matching this exact structure:
 {
-  "date_np": "आजको उपयुक्त नेपाली मिति र बार",
+  "date_np": "तपाईंले निर्धारण गर्नुभएको सही नेपाली मिति र बार (जस्तै: भदौ १५ २०८३ मंगलबार)",
   "date": "${dateEn}",
   "day": "${dayName}",
   "status_message": "${statusMessage}",
@@ -234,10 +235,10 @@ app.get("/api/generate-now", async (req, res, next) => {
   }
 });
 
-// === फ्युल रेटको रुट सुरक्षित राखिएको छ ===
+// === फ्युल रेटको रुट सुरक्षित राखिएको छ (Disconnect हुँदैन) ===
 const fuelRateRouter = require('./fuelRate');
 app.use('/api', fuelRateRouter);
-// =========================================
+// ==========================================================
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
