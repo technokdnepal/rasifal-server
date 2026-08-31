@@ -150,7 +150,7 @@ async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
   const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
 Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
 Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
-Step 3: Generate the current Nepali date string accurately for today (${dayName}, English date: ${dateEn}) in standard Nepali format (e.g., २०८३ साल...).
+Step 3: Generate the current Nepali date string accurately in this exact format only: "भदौ १५ २०८३ मंगलबार" (Month name in Nepali words, date number, year, and day).
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
