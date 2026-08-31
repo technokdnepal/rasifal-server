@@ -121,21 +121,19 @@ async function processAndGenerate(rawContent, dateEn, dayName, dateNp, sourceUse
 
   let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
 
-  const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
-Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
-Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
-Step 3: Use this EXACT Nepali date string provided without changing it: "${dateNp}".
+ const prompt = `You are a professional Nepali content localizer. Your task is to rewrite the provided raw horoscope text into simple, natural, conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ).
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 
 ✅ Strict Rules for the Nepali Output:
-1. **Each zodiac sign must have EXACTLY 4 sentences.**
-2. Completely fresh, original writing (do not copy the original words directly).
+1. **Do not change the core astrological meaning or predictions of the original text.** Translate and adapt the exact points provided in the raw data into natural spoken Nepali without adding imaginary predictions.
+2. **Each zodiac sign must have EXACTLY 4 sentences.**
 3. Use everyday spoken words, avoid heavy or official Sanskrit words.
 4. Never include the zodiac sign's name inside the prediction text or at the beginning.
 5. Do not start sentences with phrases like "आजको दिन" वा "यस दिन".
 6. Never include lucky colors, lucky numbers, lucky directions, or gemstone details inside the prediction.
+7. Use this EXACT Nepali date string provided without changing it: "${dateNp}".
 
 Return ONLY a valid JSON object matching this exact structure:
 {
@@ -160,7 +158,7 @@ Return ONLY a valid JSON object matching this exact structure:
 }
 
 ⚡ CRITICAL: Do not include any extra markdown or text, only output valid JSON.`;
-
+  
   try {
     const content = await callGeminiAI(prompt);
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
