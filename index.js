@@ -102,25 +102,23 @@ const AVAILABLE_MODELS = [
   'gemini-2.5-flash'
 ];
 
+// 🟢 गुगल जेमिनीबाट सीधै कल गर्ने अप्टिमाइज्ड फंक्सन (१३२ देखि १५५ लाइनको ठाउँमा राख्ने)
 async function callGeminiAI(promptText) {
   for (const modelName of AVAILABLE_MODELS) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`🤖 Google Gemini (${modelName}) प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: promptText,
-        });
-        if (response && response.text) {
-          console.log(`✅ ${modelName} बाट सफलतापूर्वक नतिजा आयो!`);
-          return response.text;
-        }
-      } catch (err) {
-        console.warn(`⚠️ मोडल ${modelName} प्रयास ${attempt} असफल: ${err.message}`);
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        }
+    try {
+      console.log(`🤖 Google Gemini (${modelName}) प्रयोग गर्दै...`);
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: promptText,
+      });
+      if (response && response.text) {
+        console.log(`✅ ${modelName} बाट सफलतापूर्वक नतिजा आयो!`);
+        return response.text;
       }
+    } catch (err) {
+      console.warn(`⚠️ मोडल ${modelName} मा समस्या देखियो: ${err.message}`);
+      console.log(`🔄 अर्को लाइभ मोडलमा तुरुन्त जाँदैछ...`);
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
   throw new Error("❌ सबै गुगल जेमिनी मोडलहरू पूर्ण रूपमा असफल भए!");
