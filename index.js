@@ -32,7 +32,8 @@ function getNepaliDateText() {
     targetMoment = nepalNow.clone().subtract(1, 'days');
   }
 
-  const fixedDateNp = "भदौ १५ २०८३ मंगलबार";
+  // तिमीले चाहेको ठ्याक्कै फर्मट: "भदौ १५ मंगलबार २०८३"
+  const fixedDateNp = "भदौ १५ मंगलबार २०८३";
   
   return {
     date_en: targetMoment.format('YYYY-MM-DD'),
