@@ -93,13 +93,13 @@ async function fetchRawData() {
   return { data: null, source: "None" };
 }
 
-// 🟢 गुगल जेमिनीबाट सीधै कल गर्ने फंक्सन (सही र चल्ने मोडल प्रयोग गरिएको)
+// 🟢 गुगल जेमिनीबाट सीधै कल गर्ने फंक्सन (हालको आधिकारिक gemini-3.6-flash मोडल राखिएको)
 async function callGeminiAI(promptText) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      console.log(`🤖 Google Gemini (gemini-2.0-flash) प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
+      console.log(`🤖 Google Gemini (gemini-3.6-flash) प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
       const response = await ai.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.6-flash',
         contents: promptText,
       });
       return response.text;
