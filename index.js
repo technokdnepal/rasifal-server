@@ -21,9 +21,8 @@ let cache = { data: null, last_updated: null };
 
 // 🟢 अद्यावधिक गरिएका फ्रि AI मोडलहरूको सूची
 const FREE_AI_MODELS = [
-  "google/gemma-4-26b-a4b-it:free",
   "google/gemma-4-31b-it:free",
-  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "google/gemma-4-26b-a4b-it:free",
   "z-ai/glm-5.2:free",
   "openrouter/free"
 ];
