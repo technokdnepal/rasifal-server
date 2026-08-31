@@ -94,24 +94,36 @@ async function fetchRawData() {
   return { data: null, source: "None" };
 }
 
-// 🟢 गुगल जेमिनीबाट सीधै कल गर्ने फंक्सन (हालको आधिकारिक gemini-3.6-flash मोडल राखिएको)
+// 🟢 १००% कन्फर्म गरिएका लाइभ मोडलहरूको लिस्ट (Multi-Model Fallback व्यवस्था सहित)
+const AVAILABLE_MODELS = [
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-2.5-flash'
+];
+
 async function callGeminiAI(promptText) {
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      console.log(`🤖 Google Gemini (gemini-3.6-flash) प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: promptText,
-      });
-      return response.text;
-    } catch (err) {
-      console.warn(`⚠️ जेमिनी प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
+  for (const modelName of AVAILABLE_MODELS) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`🤖 Google Gemini (${modelName}) प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: promptText,
+        });
+        if (response && response.text) {
+          console.log(`✅ ${modelName} बाट सफलतापूर्वक नतिजा आयो!`);
+          return response.text;
+        }
+      } catch (err) {
+        console.warn(`⚠️ मोडल ${modelName} प्रयास ${attempt} असफल: ${err.message}`);
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
       }
     }
   }
-  throw new Error("❌ गुगल जेमिनी मोडल पूर्ण रूपमा असफल भयो!");
+  throw new Error("❌ सबै गुगल जेमिनी मोडलहरू पूर्ण रूपमा असफल भए!");
 }
 
 async function processAndGenerate(rawContent, dateEn, dayName, dateNp, sourceUsed) {
@@ -122,7 +134,7 @@ async function processAndGenerate(rawContent, dateEn, dayName, dateNp, sourceUse
 
   let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
 
- const prompt = `You are a professional Nepali content localizer. Your task is to rewrite the provided raw horoscope text into simple, natural, conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ).
+  const prompt = `You are a professional Nepali content localizer. Your task is to rewrite the provided raw horoscope text into simple, natural, conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ).
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
