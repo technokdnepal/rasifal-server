@@ -169,6 +169,7 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 3. Use everyday spoken words, avoid heavy or official Sanskrit words.
 4. Never include the zodiac sign's name inside the prediction text or at the beginning.
 5. Do not start sentences with phrases like "आजको दिन" वा "यस दिन".
+6. Never include lucky colors, lucky numbers, lucky directions, or gemstone details inside the prediction.
 
 Return ONLY a valid JSON object matching this exact structure:
 {
