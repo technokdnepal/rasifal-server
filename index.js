@@ -4,6 +4,7 @@ const cors = require("cors");
 const moment = require("moment-timezone");
 const cron = require("node-cron");
 const cheerio = require("cheerio");
+const { GoogleGenAI } = require("@google/genai");
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -15,31 +16,23 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-const OR_KEY = process.env.OPENROUTER_API_KEY;
+// 🟢 गुगल जेमिनीको एपीआई की सेटअप (Render मा GEMINI_API_KEY राख्नुपर्छ)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 let cache = { data: null, last_updated: null };
-
-const FREE_AI_MODELS = [
-  "google/gemma-4-31b-it:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "z-ai/glm-5.2:free",
-  "openrouter/free"
-];
 
 // 🟢 नेपालको समय र ४ बजेको नियम अनुसार सही मिति र बार आफैं फिक्स गर्ने फंक्सन
 function getNepaliDateText() {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const hour = nepalNow.hour();
   
-  // यदि बिहानको ४ बजेभन्दा अगाडि छ भने एक दिन अगाडिको (१५ गते) मिति कायम गर्ने
+  // यदि बिहानको ४ बजेभन्दा अगाडि छ भने एक दिन अगाडिको मिति कायम गर्ने
   let targetMoment = nepalNow;
   if (hour < 4) {
     targetMoment = nepalNow.clone().subtract(1, 'days');
   }
 
-  // अस्थायी रूपमा फिक्स गरिएको मिति (भदौ १५, २०८३, मंगलबार) - यसलाई कोडले नै सही तरिकाले म्याच गर्छ
   const fixedDateNp = "भदौ १५ २०८३ मंगलबार";
-  const dayNames = { 'Sunday': 'आइतबार', 'Monday': 'सोमबार', 'Tuesday': 'मङ्गलबार', 'Wednesday': 'बुधबार', 'Thursday': 'बिहीबार', 'Friday': 'शुक्रबार', 'Saturday': 'शनिबार' };
   
   return {
     date_en: targetMoment.format('YYYY-MM-DD'),
@@ -48,8 +41,7 @@ function getNepaliDateText() {
   };
 }
 
-// 🟢 डिले समय बढाएर ३० सेकेन्ड (३०००० देखि ३५००० मिलिसेकेन्ड) बनाइएको छ
-const randomDelay = (min = 30000, max = 35000) => {
+const randomDelay = (min = 5000, max = 10000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
 };
@@ -83,7 +75,7 @@ async function scrapeWithRetry(url, name) {
       }
     } catch (err) {
       console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await randomDelay(30000, 35000);
+      if (attempt < 3) await randomDelay(5000, 10000);
     }
   }
   return { success: false, text: null };
@@ -94,66 +86,36 @@ async function fetchRawData() {
   if (result.success) return { data: result.text, source: "HamroPatro" };
 
   console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
-  await randomDelay(30000, 35000);
+  await randomDelay(5000, 10000);
   let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
   if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
   return { data: null, source: "None" };
 }
 
-async function callOpenRouterWithFallback(promptText) {
-  for (const model of FREE_AI_MODELS) {
-    let success = false;
-    let responseData = null;
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        console.log(`🤖 AI मोडल [${model}] प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
-        const response = await axios.post(
-          "https://openrouter.ai/api/v1/chat/completions",
-          {
-            model: model,
-            messages: [{ role: "user", content: promptText }]
-          },
-          { 
-            headers: { 
-              "Authorization": `Bearer ${OR_KEY.trim()}`,
-              "HTTP-Referer": "https://render.com",
-              "X-Title": "Rashifal App"
-            },
-            timeout: 45000 
-          }
-        );
-        responseData = response.data;
-        success = true;
-        break;
-      } catch (err) {
-        const errCode = err.response?.status || err.message;
-        console.warn(`⚠️ मोडल [${model}] प्रयास ${attempt} असफल (${errCode}).`);
-        
-        if (err.response?.status === 402) {
-          console.warn(`💳 402 एरर देखिएकोले यो मोडल छोडेर अर्कोमा जाँदैछौं...`);
-          break; 
-        }
-
-        if (attempt < 3) {
-          console.log(`⏳ ३० सेकेन्ड पर्खेर पुनः यही मोडल ट्राइ गर्दै...`);
-          await new Promise(resolve => setTimeout(resolve, 30000));
-        }
+// 🟢 गुगल जेमिनीबाट सीधै कल गर्ने फंक्सन
+async function callGeminiAI(promptText) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`🤖 Google Gemini (gemini-2.5-flash) प्रयोग गर्दै (प्रयास ${attempt}/3)...`);
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: promptText,
+      });
+      return response.text;
+    } catch (err) {
+      console.warn(`⚠️ जेमिनी प्रयास ${attempt} असफल: ${err.message}`);
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
-
-    if (success) {
-      return responseData;
-    }
-    console.log(`🔄 मोडल [${model}] पूर्ण रूपमा असफल भयो, अर्को मोडलमा सर्दैछ...`);
   }
-  throw new Error("❌ सबै फ्रि AI मोडलहरू असफल भए!");
+  throw new Error("❌ गुगल जेमिनी मोडल पूर्ण रूपमा असफल भयो!");
 }
 
 async function processAndGenerate(rawContent, dateEn, dayName, dateNp, sourceUsed) {
-  if (!OR_KEY) {
-    console.error("❌ ERROR: OPENROUTER_API_KEY is missing!");
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("❌ ERROR: GEMINI_API_KEY is missing in environment variables!");
     return false;
   }
 
@@ -200,14 +162,13 @@ Return ONLY a valid JSON object matching this exact structure:
 ⚡ CRITICAL: Do not include any extra markdown or text, only output valid JSON.`;
 
   try {
-    const aiResponse = await callOpenRouterWithFallback(prompt);
-    const content = aiResponse.choices[0].message.content;
+    const content = await callGeminiAI(prompt);
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! मोडलबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।");
+    console.log("✅ Success! जेमिनीबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।");
     return true;
   } catch (err) {
-    console.error("❌ All AI Models Failed:", err.message);
+    console.error("❌ Gemini AI Processing Failed:", err.message);
     return false;
   }
 }
@@ -246,10 +207,10 @@ app.get("/api/generate-now", async (req, res, next) => {
   }
 });
 
-// === फ्युल रेटको रुट सुरक्षित राखिएको छ (Disconnect हुँदैन) ===
+// === फ्युल रेटको रुट सुरक्षित राखिएको छ ===
 const fuelRateRouter = require('./fuelRate');
 app.use('/api', fuelRateRouter);
-// ==========================================================
+// ==========================================
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
