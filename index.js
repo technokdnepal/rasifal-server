@@ -60,9 +60,18 @@ async function scrapeWithRetry(url, name) {
       });
       const $ = cheerio.load(data);
       let scrapedText = "";
-      $("p, div, span").each((i, el) => {
-        scrapedText += $(el).text() + "\n";
-      });
+      
+      // सुधारिएको सेलेक्टर: जथाभावी सबै ट्याग तानेको सट्टा मुख्य राशिफलको कन्टेनर/बक्सलाई मात्र टार्गेट गर्ने
+      const targetElement = $(".desc, .rashifal-content, .panel-body, article").first();
+      if (targetElement.length > 0) {
+        scrapedText = targetElement.text();
+      } else {
+        // यदि स्पेसिफिक क्लास भेटिएन भने मात्र वैकल्पिक रूपमा प्याराग्राफहरू तान्ने
+        $("p").each((i, el) => {
+          scrapedText += $(el).text() + "\n";
+        });
+      }
+
       if (scrapedText.length > 200) {
         console.log(`✅ ${name} बाट सफलतापूर्वक डाटा प्राप्त भयो!`);
         return { success: true, text: scrapedText };
@@ -145,9 +154,11 @@ async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
 
   let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
 
+  // मिति सम्बन्धी भ्रम हटाउन र डाइनामिक बनाउन current day र date_en लाई प्रम्प्टमा स्पष्ट रूपमा पठाइएको छ
   const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
 Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
 Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
+Step 3: Generate the current Nepali date string accurately for today (${dayName}, English date: ${dateEn}) in standard Nepali format (e.g., २०८३ साल...).
 
 📌 Raw Scraped Data:
 ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
@@ -161,13 +172,13 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 
 Return ONLY a valid JSON object matching this exact structure:
 {
-  "date_np": "२०८३ साउन २१, बिहीबार",
+  "date_np": "आजको उपयुक्त नेपाली मिति र बार",
   "date": "${dateEn}",
   "day": "${dayName}",
   "status_message": "${statusMessage}",
   "data": [
     {"sign": "Aries", "sign_np": "मेष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
-    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य።"},
+    {"sign": "Taurus", "sign_np": "वृष", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Gemini", "sign_np": "मिथुन", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Cancer", "sign_np": "कर्कट", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
     {"sign": "Leo", "sign_np": "सिंह", "prediction": "पहिलो वाक्य। दोस्रो वाक्य। तेस्रो वाक्य। चौथो वाक्य।"},
@@ -210,7 +221,10 @@ cron.schedule('0 4 * * *', () => {
 
 app.get("/api/rasifal", (req, res) => {
   if (!cache.data) {
-    return res.status(503).json({ error: "Service Unavailable", message: "Loading..." });
+    return res.status(503).json({ 
+      status: "error", 
+      message: "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।" 
+    });
   }
   res.json(cache.data);
 });
@@ -220,14 +234,17 @@ app.get("/api/generate-now", async (req, res) => {
   if (success) {
     res.json({ status: "success", message: "सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
   } else {
-    res.status(500).json({ status: "error", message: "जेनेरेट गर्न असफल भयो।" });
+    res.status(500).json({ 
+      status: "error", 
+      message: "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।" 
+    });
   }
 });
 
-// === यहाँ नयाँ फ्युल रेटको रुट थपिएको छ (तपाईंको पुरानो राशिफलको कोड सुरक्षित छ) ===
+// === फ्युल रेटको रुट सुरक्षित राखिएको छ ===
 const fuelRateRouter = require('./fuelRate');
 app.use('/api', fuelRateRouter);
-// =========================================================================
+// =========================================
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
