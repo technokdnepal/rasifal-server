@@ -134,6 +134,7 @@ ${rawContent ? rawContent.substring(0, 8000) : "Daily Horoscope"}
 5. Do not start sentences with phrases like "आजको दिन" वा "यस दिन".
 6. Never include lucky colors, lucky numbers, lucky directions, or gemstone details inside the prediction.
 7. Use this EXACT Nepali date string provided without changing it: "${dateNp}".
+8. Do not add imaginative details, extra adjectives, or extended storytelling. Keep it crisp, faithful, and direct to the original text while using natural spoken Nepali.
 
 Return ONLY a valid JSON object matching this exact structure:
 {
