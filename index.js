@@ -19,17 +19,13 @@ const OR_KEY = process.env.OPENROUTER_API_KEY;
 
 let cache = { data: null, last_updated: null };
 
-// 🟢 Google Gemma लाई पहिलो प्राथमिकतामा राखिएको छ, त्यसपछि अन्य मोडलहरू
+// 🟢 अद्यावधिक गरिएका फ्रि AI मोडलहरूको सूची
 const FREE_AI_MODELS = [
   "google/gemma-4-26b-a4b-it:free",
   "google/gemma-4-31b-it:free",
-  "google/gemma-2-9b-it:free",
-  "openai/gpt-oss-20b:free",
-  "openai/gpt-oss-20b",
-  "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "nvidia/nemotron-3-nano-30b-a3b:free",
-  "meta-llama/llama-3-8b-instruct:free"
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "z-ai/glm-5.2:free",
+  "openrouter/free"
 ];
 
 function getNepaliDateText() {
@@ -61,12 +57,10 @@ async function scrapeWithRetry(url, name) {
       const $ = cheerio.load(data);
       let scrapedText = "";
       
-      // सुधारिएको सेलेक्टर: जथाभावी सबै ट्याग तानेको सट्टा मुख्य राशिफलको कन्टेनर/बक्सलाई मात्र टार्गेट गर्ने
       const targetElement = $(".desc, .rashifal-content, .panel-body, article").first();
       if (targetElement.length > 0) {
         scrapedText = targetElement.text();
       } else {
-        // यदि स्पेसिफिक क्लास भेटिएन भने मात्र वैकल्पिक रूपमा प्याराग्राफहरू तान्ने
         $("p").each((i, el) => {
           scrapedText += $(el).text() + "\n";
         });
@@ -154,7 +148,6 @@ async function processAndGenerate(rawContent, dateEn, dayName, sourceUsed) {
 
   let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
 
-  // मिति सम्बन्धी भ्रम हटाउन र डाइनामिक बनाउन current day र date_en लाई प्रम्प्टमा स्पष्ट रूपमा पठाइएको छ
   const prompt = `You are an expert multilingual astrologer and professional content rewriter. 
 Step 1: Read the raw scraped horoscope text carefully. Internally translate and comprehend its astrological essence into English to completely grasp the meaning.
 Step 2: Rewrite the content entirely into extremely simple, natural, and conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ). Do not do a literal word-for-word translation; instead, make it sound fresh, engaging, and spoken.
@@ -200,7 +193,7 @@ Return ONLY a valid JSON object matching this exact structure:
     const content = aiResponse.choices[0].message.content;
     const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
     cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! Google Gemma मोडलबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।");
+    console.log("✅ Success! मोडलबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।");
     return true;
   } catch (err) {
     console.error("❌ All AI Models Failed:", err.message);
@@ -230,7 +223,7 @@ app.get("/api/rasifal", (req, res) => {
   res.json(cache.data);
 });
 
-app.get("/api/generate-now", async (req, res) => {
+app.get("/api/generate-now", async (req, res, next) => {
   const success = await runWorkflow();
   if (success) {
     res.json({ status: "success", message: "सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
