@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@google/genai": "latest",
+    "@sbmdkl/nepali-date-converter": "^2.0.5",
     "axios": "^1.7.9",
     "cheerio": "^1.0.0",
     "cors": "^2.8.5",
