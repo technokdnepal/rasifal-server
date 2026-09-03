@@ -5,6 +5,7 @@ const moment = require("moment-timezone");
 const cron = require("node-cron");
 const cheerio = require("cheerio");
 const { GoogleGenAI } = require("@google/genai");
+const { adToBs } = require("@sbmdkl/nepali-date-converter");
 require("dotenv").config();
 
 process.env.TZ = "Asia/Kathmandu";
@@ -21,52 +22,172 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 let cache = { data: null, last_updated: null };
 
-// 🟢 नेपालको समय र ४ बजेको नियम अनुसार सही मिति र बार आफैं फिक्स गर्ने फंक्सन
+
+// ==========================================================
+// 🟢 DYNAMIC NEPALI DATE FUNCTION
+// ==========================================================
+// IMPORTANT:
+// राशिफलको date बिहान ४ बजे परिवर्तन हुन्छ।
+// राति १२ बजे परिवर्तन हुँदैन।
+//
+// उदाहरण:
+// 2026-09-03 बिहान 3:59 सम्म → अघिल्लो दिनको BS date
+// 2026-09-03 बिहान 4:00 पछि → 2083 भदौ 18
+//
+// English date (date_en) पनि यही 4 AM cutoff अनुसार
+// अघिल्लो दिन / current day हुन्छ।
+// ==========================================================
+
 function getNepaliDateText() {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const hour = nepalNow.hour();
-  
-  // यदि बिहानको ४ बजेभन्दा अगाडि छ भने एक दिन अगाडिको मिति कायम गर्ने
-  let targetMoment = nepalNow;
+
+  // बिहान ४ बजेभन्दा अगाडि भए अघिल्लो दिनलाई target बनाउने
+  let targetMoment = nepalNow.clone();
+
   if (hour < 4) {
-    targetMoment = nepalNow.clone().subtract(1, 'days');
+    targetMoment = targetMoment.subtract(1, "day");
   }
 
-  // 🟢 यहाँ अब फिक्स (Hardcoded) शब्द हटाएर मोमेन्टबाट आजको वास्तविक मिति निकाल्ने
-  // नोट: यदि तिम्रो प्रोजेक्टमा अंग्रेजी मितिलाई नेपालीमा बदल्ने छुट्टै प्याकेज (যেমন nepali-date-converter) छ भने त्यो प्रयोग गर्नुपर्छ,
-  // तर यदि स्ट्रिङ मात्रै डायनामिक बनाउने हो भने तलको जस्तै वा सहि नेपाली मिति तान्ने लजिक राख्नुपर्छ।
-  
-  // उदाहरणको लागि हालको सिस्टम date (2026-09-01) अनुसार आजको सहि नेपाली मिति:
-  const dayName = "मङ्गलबार"; // बार
-  const fixedDateNp = "भदौ १६ मङ्गलबार २०८३"; // 👈 यसलाई आजको १६ गते बनाइएको छ
+  // Target AD date
+  const dateEn = targetMoment.format("YYYY-MM-DD");
+
+  // AD → BS conversion
+  const bsDate = adToBs(dateEn);
+
+  // Package बाट आएको BS date सामान्यतया YYYY-MM-DD format मा आउँछ।
+  // Future compatibility का लागि string/object दुवैलाई safely handle गरिएको छ।
+  let bsYear;
+  let bsMonth;
+  let bsDay;
+
+  if (typeof bsDate === "string") {
+    const parts = bsDate.split("-");
+
+    bsYear = parseInt(parts[0], 10);
+    bsMonth = parseInt(parts[1], 10);
+    bsDay = parseInt(parts[2], 10);
+  } else if (bsDate && typeof bsDate === "object") {
+    bsYear = Number(bsDate.year);
+    bsMonth = Number(bsDate.month);
+    bsDay = Number(bsDate.day ?? bsDate.date);
+  } else {
+    throw new Error(`Invalid BS date returned for AD date: ${dateEn}`);
+  }
+
+  // Nepali month names
+  const nepaliMonths = [
+    "",
+    "बैशाख",
+    "जेठ",
+    "असार",
+    "श्रावण",
+    "भदौ",
+    "असोज",
+    "कार्तिक",
+    "मंसिर",
+    "पौष",
+    "माघ",
+    "फागुन",
+    "चैत"
+  ];
+
+  // Nepali weekday names
+  // moment().day(): Sunday = 0 ... Saturday = 6
+  const nepaliWeekdays = [
+    "आइतबार",
+    "सोमबार",
+    "मङ्गलबार",
+    "बुधबार",
+    "बिहीबार",
+    "शुक्रबार",
+    "शनिबार"
+  ];
+
+  // Nepali Unicode digits
+  const nepaliDigits = {
+    "0": "०",
+    "1": "१",
+    "2": "२",
+    "3": "३",
+    "4": "४",
+    "5": "५",
+    "6": "६",
+    "7": "७",
+    "8": "८",
+    "9": "९"
+  };
+
+  function toNepaliDigits(value) {
+    return String(value).replace(
+      /\d/g,
+      (digit) => nepaliDigits[digit]
+    );
+  }
+
+  const monthName = nepaliMonths[bsMonth];
+
+  if (!monthName) {
+    throw new Error(
+      `Invalid Nepali month returned: ${bsMonth} for AD date ${dateEn}`
+    );
+  }
+
+  const dayName = nepaliWeekdays[targetMoment.day()];
+
+  // Same existing format:
+  // भदौ १८ बिहीबार २०८३
+  const dateNp =
+    `${monthName} ${toNepaliDigits(bsDay)} ` +
+    `${dayName} ${toNepaliDigits(bsYear)}`;
+
+  console.log(
+    `📅 [DATE DEBUG] AD: ${dateEn} → BS: ${dateNp}`
+  );
 
   return {
-    date_en: targetMoment.format('YYYY-MM-DD'),
+    date_en: dateEn,
     day: dayName,
-    date_np: fixedDateNp
+    date_np: dateNp
   };
 }
+
+
+// ==========================================================
+// RANDOM DELAY
+// ==========================================================
 
 const randomDelay = (min = 5000, max = 10000) => {
   const ms = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise(resolve => setTimeout(resolve, ms));
 };
 
+
+// ==========================================================
+// SCRAPE WITH RETRY
+// ==========================================================
+
 async function scrapeWithRetry(url, name) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       console.log(`🔍 [प्रयास ${attempt}/3] ${name} बाट डाटा तान्दै...`);
+
       const { data } = await axios.get(url, {
-        headers: { 
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
           "Accept-Language": "en-US,en;q=0.9,ne;q=0.8"
         },
         timeout: 15000
       });
+
       const $ = cheerio.load(data);
       let scrapedText = "";
-      
-      const targetElement = $(".desc, .rashifal-content, .panel-body, article").first();
+
+      const targetElement = $(
+        ".desc, .rashifal-content, .panel-body, article"
+      ).first();
+
       if (targetElement.length > 0) {
         scrapedText = targetElement.text();
       } else {
@@ -76,66 +197,152 @@ async function scrapeWithRetry(url, name) {
       }
 
       if (scrapedText.length > 200) {
-        console.log(`✅ ${name} बाट सफलतापूर्वक डाटा प्राप्त भयो!`);
-        return { success: true, text: scrapedText };
+        console.log(
+          `✅ ${name} बाट सफलतापूर्वक डाटा प्राप्त भयो!`
+        );
+
+        return {
+          success: true,
+          text: scrapedText
+        };
       }
     } catch (err) {
-      console.warn(`⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`);
-      if (attempt < 3) await randomDelay(5000, 10000);
+      console.warn(
+        `⚠️ ${name} प्रयास ${attempt} असफल: ${err.message}`
+      );
+
+      if (attempt < 3) {
+        await randomDelay(5000, 10000);
+      }
     }
   }
-  return { success: false, text: null };
+
+  return {
+    success: false,
+    text: null
+  };
 }
+
+
+// ==========================================================
+// FETCH RAW DATA
+// ==========================================================
 
 async function fetchRawData() {
-  let result = await scrapeWithRetry("https://www.hamropatro.com/rashifal", "हाम्रो पात्रो");
-  if (result.success) return { data: result.text, source: "HamroPatro" };
+  let result = await scrapeWithRetry(
+    "https://www.hamropatro.com/rashifal",
+    "हाम्रो पात्रो"
+  );
 
-  console.log("⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ...");
+  if (result.success) {
+    return {
+      data: result.text,
+      source: "HamroPatro"
+    };
+  }
+
+  console.log(
+    "⚠️ 'हाम्रो पात्रो' मा प्रयास असफल, 'नेपाली पात्रो' मा जाँदैछ..."
+  );
+
   await randomDelay(5000, 10000);
-  let backupResult = await scrapeWithRetry("https://nepalipatro.com.np/nepali-rashifal", "नेपाली पात्रो");
-  if (backupResult.success) return { data: backupResult.text, source: "NepaliPatro" };
 
-  return { data: null, source: "None" };
+  let backupResult = await scrapeWithRetry(
+    "https://nepalipatro.com.np/nepali-rashifal",
+    "नेपाली पात्रो"
+  );
+
+  if (backupResult.success) {
+    return {
+      data: backupResult.text,
+      source: "NepaliPatro"
+    };
+  }
+
+  return {
+    data: null,
+    source: "None"
+  };
 }
 
-// 🟢 १००% कन्फर्म गरिएका लाइभ मोडलहरूको लिस्ट (Multi-Model Fallback व्यवस्था सहित)
+
+// ==========================================================
+// GEMINI MODELS
+// ==========================================================
+
 const AVAILABLE_MODELS = [
-  'gemini-3.7-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-2.5-flash'
+  "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-2.5-flash"
 ];
 
-// 🟢 गुगल जेमिनीबाट सीधै कल गर्ने अप्टिमाइज्ड फंक्सन (१३२ देखि १५५ लाइनको ठाउँमा राख्ने)
+
+// ==========================================================
+// GEMINI AI
+// ==========================================================
+
 async function callGeminiAI(promptText) {
   for (const modelName of AVAILABLE_MODELS) {
     try {
-      console.log(`🤖 Google Gemini (${modelName}) प्रयोग गर्दै...`);
+      console.log(
+        `🤖 Google Gemini (${modelName}) प्रयोग गर्दै...`
+      );
+
       const response = await ai.models.generateContent({
         model: modelName,
         contents: promptText,
       });
+
       if (response && response.text) {
-        console.log(`✅ ${modelName} बाट सफलतापूर्वक नतिजा आयो!`);
+        console.log(
+          `✅ ${modelName} बाट सफलतापूर्वक नतिजा आयो!`
+        );
+
         return response.text;
       }
     } catch (err) {
-      console.warn(`⚠️ मोडल ${modelName} मा समस्या देखियो: ${err.message}`);
-      console.log(`🔄 अर्को लाइभ मोडलमा तुरुन्त जाँदैछ...`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.warn(
+        `⚠️ मोडल ${modelName} मा समस्या देखियो: ${err.message}`
+      );
+
+      console.log(
+        `🔄 अर्को लाइभ मोडलमा तुरुन्त जाँदैछ...`
+      );
+
+      await new Promise(resolve =>
+        setTimeout(resolve, 2000)
+      );
     }
   }
-  throw new Error("❌ सबै गुगल जेमिनी मोडलहरू पूर्ण रूपमा असफल भए!");
+
+  throw new Error(
+    "❌ सबै गुगल जेमिनी मोडलहरू पूर्ण रूपमा असफल भए!"
+  );
 }
 
-async function processAndGenerate(rawContent, dateEn, dayName, dateNp, sourceUsed) {
+
+// ==========================================================
+// PROCESS AND GENERATE
+// ==========================================================
+
+async function processAndGenerate(
+  rawContent,
+  dateEn,
+  dayName,
+  dateNp,
+  sourceUsed
+) {
   if (!process.env.GEMINI_API_KEY) {
-    console.error("❌ ERROR: GEMINI_API_KEY is missing in environment variables!");
+    console.error(
+      "❌ ERROR: GEMINI_API_KEY is missing in environment variables!"
+    );
+
     return false;
   }
 
-  let statusMessage = sourceUsed !== "None" ? "" : "Loading...";
+  let statusMessage =
+    sourceUsed !== "None" ? "" : "Loading...";
 
   const prompt = `You are a professional Nepali content localizer. Your task is to rewrite the provided raw horoscope text into simple, natural, conversational Nepali (जसरी साथीसँग चिया खाँदै गफ गरिन्छ).
 
@@ -175,60 +382,138 @@ Return ONLY a valid JSON object matching this exact structure:
 }
 
 ⚡ CRITICAL: Do not include any extra markdown or text, only output valid JSON.`;
-  
+
   try {
     const content = await callGeminiAI(prompt);
-    const cleanJson = content.replace(/```json/g, "").replace(/```/g, "").trim();
-    cache = { data: JSON.parse(cleanJson), last_updated: new Date().toISOString() };
-    console.log("✅ Success! जेमिनीबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।");
+
+    const cleanJson = content
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    cache = {
+      data: JSON.parse(cleanJson),
+      last_updated: new Date().toISOString()
+    };
+
+    console.log(
+      "✅ Success! जेमिनीबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।"
+    );
+
     return true;
   } catch (err) {
-    console.error("❌ Gemini AI Processing Failed:", err.message);
+    console.error(
+      "❌ Gemini AI Processing Failed:",
+      err.message
+    );
+
     return false;
   }
 }
 
-async function runWorkflow() {
-  const { date_en, day, date_np } = getNepaliDateText();
-  console.log(`🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`);
 
-  const { data: rawData, source } = await fetchRawData();
-  return await processAndGenerate(rawData, date_en, day, date_np, source);
+// ==========================================================
+// WORKFLOW
+// ==========================================================
+
+async function runWorkflow() {
+  const {
+    date_en,
+    day,
+    date_np
+  } = getNepaliDateText();
+
+  console.log(
+    `🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`
+  );
+
+  const {
+    data: rawData,
+    source
+  } = await fetchRawData();
+
+  return await processAndGenerate(
+    rawData,
+    date_en,
+    day,
+    date_np,
+    source
+  );
 }
 
-cron.schedule('0 4 * * *', () => {
-  runWorkflow();
-}, { scheduled: true, timezone: "Asia/Kathmandu" });
+
+// ==========================================================
+// CRON — EVERY DAY AT 4:00 AM NEPAL TIME
+// ==========================================================
+
+cron.schedule(
+  "0 4 * * *",
+  () => {
+    runWorkflow();
+  },
+  {
+    scheduled: true,
+    timezone: "Asia/Kathmandu"
+  }
+);
+
+
+// ==========================================================
+// RASIFAL API
+// ==========================================================
 
 app.get("/api/rasifal", (req, res) => {
   if (!cache.data) {
-    return res.status(503).json({ 
-      status: "error", 
-      message: "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।" 
+    return res.status(503).json({
+      status: "error",
+      message:
+        "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।"
     });
   }
+
   res.json(cache.data);
 });
 
+
+// ==========================================================
+// MANUAL GENERATE API
+// ==========================================================
+
 app.get("/api/generate-now", async (req, res, next) => {
   const success = await runWorkflow();
+
   if (success) {
-    res.json({ status: "success", message: "सफलतापूर्वक जेनेरेट भयो!", data: cache.data });
+    res.json({
+      status: "success",
+      message: "सफलतापूर्वक जेनेरेट भयो!",
+      data: cache.data
+    });
   } else {
-    res.status(500).json({ 
-      status: "error", 
-      message: "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।" 
+    res.status(500).json({
+      status: "error",
+      message:
+        "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।"
     });
   }
 });
 
-// === फ्युल रेटको रुट सुरक्षित राखिएको छ ===
-const fuelRateRouter = require('./fuelRate');
-app.use('/api', fuelRateRouter);
-// ==========================================
+
+// ==========================================================
+// FUEL RATE ROUTER
+// ==========================================================
+
+const fuelRateRouter = require("./fuelRate");
+
+app.use("/api", fuelRateRouter);
+
+
+// ==========================================================
+// START SERVER
+// ==========================================================
 
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+
   if (!cache.data) {
     await runWorkflow();
   }
