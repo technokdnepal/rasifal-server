@@ -301,7 +301,7 @@ function parseHamroPatroSourceDateBs(html) {
   // require a nearby Rashifal context so unrelated page dates cannot
   // falsely validate stale content.
   const labeledMatch =
-    text.match(/राशिफल\s+(\d{1,2})\s+([^\s\d]+)\s+(\d{4})/);
+    text.match(/राशिफल\s*(\d{1,2})\s+([^\s\d]+)\s+(\d{4})/);
 
   if (labeledMatch) {
     const monthNumber =
