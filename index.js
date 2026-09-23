@@ -1,4 +1,3 @@
-
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -126,11 +125,6 @@ function getNepaliDateText() {
     `${monthName} ${toNepaliDigits(bsDay)} ` +
     `${dayName} ${toNepaliDigits(bsYear)}`;
 
-  // NOTE:
-  // Date calculation is intentionally kept.
-  // Verbose DATE DEBUG logging was removed so Render logs
-  // are not flooded by repeated date messages.
-
   return {
     date_en: dateEn,
     day: dayName,
@@ -169,18 +163,39 @@ async function scrapeWithRetry(url, name) {
       });
 
       const $ = cheerio.load(data);
+
       let scrapedText = "";
 
+      // ------------------------------------------------------
+      // First try the known Rashifal containers.
+      // ------------------------------------------------------
       const targetElement = $(
         ".desc, .rashifal-content, .panel-body, article"
       ).first();
 
       if (targetElement.length > 0) {
-        scrapedText = targetElement.text();
-      } else {
+        scrapedText = targetElement.text().trim();
+      }
+
+      // ------------------------------------------------------
+      // If the selected container is missing or too short,
+      // collect paragraph text as a fallback within the same
+      // source attempt.
+      // ------------------------------------------------------
+      if (scrapedText.length <= 200) {
+        let paragraphText = "";
+
         $("p").each((i, el) => {
-          scrapedText += $(el).text() + "\n";
+          const text = $(el).text().trim();
+
+          if (text) {
+            paragraphText += text + "\n";
+          }
         });
+
+        if (paragraphText.length > scrapedText.length) {
+          scrapedText = paragraphText.trim();
+        }
       }
 
       if (scrapedText.length > 200) {
@@ -202,10 +217,10 @@ async function scrapeWithRetry(url, name) {
       console.warn(
         `⚠️ [SCRAPE FAIL] ${name} प्रयास ${attempt}/3 असफल: ${err.message}`
       );
+    }
 
-      if (attempt < 3) {
-        await randomDelay(5000, 10000);
-      }
+    if (attempt < 3) {
+      await randomDelay(5000, 10000);
     }
   }
 
@@ -244,7 +259,7 @@ async function fetchRawData() {
   }
 
   console.warn(
-    "🔴 [SOURCE FALLBACK] HamroPatro असफल भयो। अब NepaliPatro मा fallback हुँदैछ..."
+    "🔴 [SOURCE FALLBACK] HamroPatro का सबै प्रयास असफल भए। अब NepaliPatro मा fallback हुँदैछ..."
   );
 
   await randomDelay(5000, 10000);
@@ -285,16 +300,14 @@ async function fetchRawData() {
 
 // IMPORTANT:
 // This is intentionally FINITE.
-// There is NO infinite Gemini retry loop.
 //
-// Maximum:
-// - 1 initial model pass
-// - 1 controlled retry pass
-// - Maximum 3 model attempts per pass
+// Maximum per Gemini stage:
+// - Initial pass: up to 5 different usable models
+// - Controlled retry pass: only temporary-failure models
+// - Maximum 2 passes
 //
-// This keeps Gemini requests bounded and avoids repeatedly
-// cycling through every available model.
-const GEMINI_MAX_MODELS_PER_PASS = 3;
+// There is NO infinite retry loop.
+const GEMINI_MAX_MODELS_PER_PASS = 5;
 const GEMINI_MAX_PASSES = 2;
 
 const GEMINI_RETRY_DELAYS = [
@@ -367,9 +380,6 @@ function isPermanentGeminiError(err) {
     lowerMessage.includes("unsupported model") ||
     lowerMessage.includes("deprecated") ||
     lowerMessage.includes("invalid model") ||
-    lowerMessage.includes("limit: 0") ||
-    lowerMessage.includes("quota exceeded for metric") ||
-    lowerMessage.includes("free_tier") &&
     lowerMessage.includes("limit: 0")
   );
 }
@@ -587,6 +597,64 @@ function parseAndValidateEnglishIntermediate(
 }
 
 // ==========================================================
+// VALIDATE FRESH HOROSCOPE IDEAS
+// ==========================================================
+function parseAndValidateFreshIdeas(
+  content
+) {
+  const cleanJson =
+    cleanGeminiJson(content);
+
+  const parsed =
+    JSON.parse(cleanJson);
+
+  if (
+    !parsed ||
+    typeof parsed !== "object"
+  ) {
+    throw new Error(
+      "Gemini returned invalid fresh-ideas JSON."
+    );
+  }
+
+  if (
+    !Array.isArray(parsed.data) ||
+    parsed.data.length !== 12
+  ) {
+    throw new Error(
+      "Fresh horoscope ideas must contain exactly 12 zodiac signs."
+    );
+  }
+
+  for (const item of parsed.data) {
+    if (
+      !item ||
+      typeof item.sign !== "string" ||
+      typeof item.sign_np !== "string" ||
+      !Array.isArray(item.angles) ||
+      item.angles.length !== 4
+    ) {
+      throw new Error(
+        "Fresh horoscope ideas must contain exactly 4 angles per zodiac sign."
+      );
+    }
+
+    for (const angle of item.angles) {
+      if (
+        typeof angle !== "string" ||
+        !angle.trim()
+      ) {
+        throw new Error(
+          "Fresh horoscope angle is empty."
+        );
+      }
+    }
+  }
+
+  return parsed;
+}
+
+// ==========================================================
 // VALIDATE FINAL NEPALI RASHIFAL
 // ==========================================================
 function parseAndValidateGeminiResult(
@@ -671,16 +739,13 @@ async function callGeminiWithValidator(
     );
   }
 
-  const maxModels =
-    Math.min(
-      GEMINI_MAX_MODELS_PER_PASS,
-      availableModels.length
-    );
-
   const candidateModels =
     availableModels.slice(
       0,
-      maxModels
+      Math.min(
+        GEMINI_MAX_MODELS_PER_PASS,
+        availableModels.length
+      )
     );
 
   const failedTransientModels =
@@ -707,7 +772,7 @@ async function callGeminiWithValidator(
 
     if (!modelsForThisPass.length) {
       console.log(
-        "⚠️ Retry गर्न बाँकी usable model छैन।"
+        "⚠️ Retry गर्न बाँकी temporary-failed model छैन।"
       );
 
       break;
@@ -753,13 +818,13 @@ async function callGeminiWithValidator(
         );
 
         // --------------------------------------------------
-        // Permanent / exhausted quota model
+        // Permanent / unavailable model
         // --------------------------------------------------
         if (
           isPermanentGeminiError(err)
         ) {
           console.warn(
-            `⏭️ ${model.id} permanently unusable/exhausted जस्तो देखियो। यो model फेरि retry गरिँदैन।`
+            `⏭️ ${model.id} permanently unusable/unavailable जस्तो देखियो। Retry गरिँदैन।`
           );
 
           failedTransientModels.delete(
@@ -776,7 +841,7 @@ async function callGeminiWithValidator(
           isRetryableGeminiError(err)
         ) {
           console.log(
-            `⏳ ${model.id} temporary failure हो। Limited retry को लागि राखियो।`
+            `⏳ ${model.id} temporary failure हो। Limited retry list मा राखियो।`
           );
 
           failedTransientModels.add(
@@ -789,15 +854,17 @@ async function callGeminiWithValidator(
         // --------------------------------------------------
         // Validation / unknown failure
         // --------------------------------------------------
-        console.log(
-          `⏭️ ${model.id} बाट valid output आएन। अर्को model मा जाँदैछ।`
+        console.warn(
+          `⏭️ ${model.id} बाट valid output आएन। यो request मा retry नगरी अर्को model मा जाँदैछ।`
         );
 
-        continue;
+        failedTransientModels.delete(
+          model.id
+        );
       }
     }
 
-    // No more retry pass
+    // No second pass
     if (
       pass >=
       GEMINI_MAX_PASSES - 1
@@ -827,7 +894,7 @@ async function callGeminiWithValidator(
   }
 
   throw new Error(
-    `Gemini generation failed after controlled attempts. No infinite retry will be performed.`
+    "Gemini generation failed after controlled attempts. No infinite retry will be performed."
   );
 }
 
@@ -857,7 +924,8 @@ IMPORTANT:
 - Ignore lucky colors, lucky numbers, lucky directions and gemstones.
 - Exactly 12 zodiac signs are required.
 - Keep the meaning concise.
-- The next AI will use this semantic representation to create a fresh horoscope.
+- The next AI will use this semantic representation to create fresh horoscope ideas.
+- This is a semantic abstraction, not a literal translation.
 
 Raw source:
 ${rawContent.substring(0, 12000)}
@@ -936,64 +1004,6 @@ Return nothing except the JSON object.`;
     parseAndValidateEnglishIntermediate,
     availableModels
   );
-}
-
-// ==========================================================
-// GENERATE FRESH HOROSCOPE IDEAS / ANGLES
-// ==========================================================
-function parseAndValidateFreshIdeas(
-  content
-) {
-  const cleanJson =
-    cleanGeminiJson(content);
-
-  const parsed =
-    JSON.parse(cleanJson);
-
-  if (
-    !parsed ||
-    typeof parsed !== "object"
-  ) {
-    throw new Error(
-      "Gemini returned invalid fresh-ideas JSON."
-    );
-  }
-
-  if (
-    !Array.isArray(parsed.data) ||
-    parsed.data.length !== 12
-  ) {
-    throw new Error(
-      "Fresh horoscope ideas must contain exactly 12 zodiac signs."
-    );
-  }
-
-  for (const item of parsed.data) {
-    if (
-      !item ||
-      typeof item.sign !== "string" ||
-      typeof item.sign_np !== "string" ||
-      !Array.isArray(item.angles) ||
-      item.angles.length !== 4
-    ) {
-      throw new Error(
-        "Fresh horoscope ideas must contain exactly 4 angles per zodiac sign."
-      );
-    }
-
-    for (const angle of item.angles) {
-      if (
-        typeof angle !== "string" ||
-        !angle.trim()
-      ) {
-        throw new Error(
-          "Fresh horoscope angle is empty."
-        );
-      }
-    }
-  }
-
-  return parsed;
 }
 
 // ==========================================================
@@ -1210,9 +1220,10 @@ IMPORTANT:
 - Use proper Nepali punctuation.
 
 The goal is:
+
 SOURCE MEANING
-→ fresh semantic understanding
-→ fresh horoscope angles
+→ ENGLISH SEMANTIC UNDERSTANDING
+→ FRESH HOROSCOPE IDEAS / ANGLES
 → ORIGINAL NATURAL NEPALI
 
 The final result must NOT read like a direct translation or close paraphrase of the source.
@@ -1627,4 +1638,3 @@ app.listen(
     }
   }
 );
-
