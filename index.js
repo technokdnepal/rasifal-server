@@ -21,6 +21,9 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY
 });
 
+const fs = require("fs");
+const path = require("path");
+
 let cache = {
   data: null,
   last_updated: null
@@ -28,6 +31,90 @@ let cache = {
 
 // Prevent overlapping Rashifal workflows
 let workflowRunning = false;
+
+// Daily retry-window state: bounded 4:00-6:00 AM schedule.
+// A date-stamped flag prevents repeat same-day generation after success.
+let dailyAttempt = {
+  date_en: null,
+  done: false
+};
+
+// Persistent same-day cache so a normal restart does not regenerate
+// today's Rashifal. In-memory cache alone is wiped on restart.
+const CACHE_FILE = path.join(__dirname, "rashifal-cache.json");
+
+function loadPersistedCache() {
+  try {
+    if (!fs.existsSync(CACHE_FILE)) {
+      return;
+    }
+
+    const persisted = JSON.parse(
+      fs.readFileSync(CACHE_FILE, "utf8")
+    );
+
+    if (
+      persisted &&
+      persisted.cache &&
+      persisted.cache.data &&
+      persisted.dailyAttempt &&
+      persisted.dailyAttempt.date_en &&
+      persisted.dailyAttempt.done === true &&
+      persisted.cache.data.date === persisted.dailyAttempt.date_en
+    ) {
+      cache = persisted.cache;
+      dailyAttempt = persisted.dailyAttempt;
+    }
+  } catch (_) {
+    // Corrupt cache file must never break startup.
+  }
+}
+
+function savePersistedCache() {
+  try {
+    fs.writeFileSync(
+      CACHE_FILE,
+      JSON.stringify(
+        {
+          cache,
+          dailyAttempt
+        },
+        null,
+        2
+      )
+    );
+  } catch (_) {
+    // Cache persistence is best-effort only.
+  }
+}
+
+loadPersistedCache();
+
+// ==========================================================
+// TODAY'S CACHE CHECK — SAME NEPALI DATE ALREADY GENERATED?
+// ==========================================================
+// Conservative: BOTH memory cache AND in-progress daily flag must
+// agree with today's date before skipping Gemini. A restart clears
+// memory, so a stale in-memory value alone must never skip work.
+function hasValidTodayCache(dateEn) {
+  if (!dateEn) {
+    return false;
+  }
+
+  if (
+    !cache.data ||
+    cache.data.date !== dateEn ||
+    !Array.isArray(cache.data.data) ||
+    cache.data.data.length !== 12
+  ) {
+    return false;
+  }
+
+  return (
+    dailyAttempt.date_en === dateEn &&
+    dailyAttempt.done === true
+  );
+}
 
 // ==========================================================
 // DYNAMIC NEPALI DATE FUNCTION
@@ -133,6 +220,190 @@ function getNepaliDateText() {
 }
 
 // ==========================================================
+// NEPALI DIGITS / MONTHS / WEEKDAYS SHARED BY SCRAPED-DATE CHECK
+// ==========================================================
+const NEPALI_DIGITS_REVERSE = {
+  "०": "0",
+  "१": "1",
+  "२": "2",
+  "३": "3",
+  "४": "4",
+  "५": "5",
+  "६": "6",
+  "७": "7",
+  "८": "8",
+  "९": "9"
+};
+
+const NEPALI_MONTH_NAME_TO_NUMBER = {
+  "बैशाख": 1,
+  "जेठ": 2,
+  "असार": 3,
+  "श्रावण": 4,
+  "साउन": 4,
+  "भदौ": 5,
+  "भाद्र": 5,
+  "असोज": 6,
+  "आश्विन": 6,
+  "कार्तिक": 7,
+  "कात्तिक": 7,
+  "मंसिर": 8,
+  "मार्ग": 8,
+  "पौष": 9,
+  "पुस": 9,
+  "माघ": 10,
+  "फागुन": 11,
+  "फाल्गुन": 11,
+  "चैत": 12,
+  "चैत्र": 12
+};
+
+function normalizeNepaliDigits(text) {
+  return String(text || "").replace(
+    /[०-९]/g,
+    (digit) => NEPALI_DIGITS_REVERSE[digit]
+  );
+}
+
+// ==========================================================
+// SCRAPED SOURCE-DATE CHECK — STALE SOURCE MUST NOT REACH GEMINI
+// ==========================================================
+// HamroPatro exposes its Rashifal date in the page HTML such as
+// "राशिफल ०७ आश्विन २०८३ बुधवार" (BS day, BS month name, BS year).
+// There is no dependable separate AD date field on that fragment, so
+// compare BS day/month/year to today's BS date derived server-side.
+// NepaliPatro's HTML currently exposes no usable per-day Rashifal
+// date, so its freshness cannot be verified: it stays lower priority
+// and is treated as unverified, never as confirmed current.
+function parseHamroPatroSourceDateBs(html) {
+  const text = normalizeNepaliDigits(
+    cheerio.load(html || "").text()
+  );
+
+  // Prefer an explicit Rashifal label first. Fallback generic matches
+  // require a nearby Rashifal context so unrelated page dates cannot
+  // falsely validate stale content.
+  const labeledMatch =
+    text.match(/राशिफल\s+(\d{1,2})\s+([^\s\d]+)\s+(\d{4})/);
+
+  if (labeledMatch) {
+    const monthNumber =
+      NEPALI_MONTH_NAME_TO_NUMBER[labeledMatch[2]] || null;
+
+    if (!monthNumber) {
+      return null;
+    }
+
+    return {
+      day: Number(labeledMatch[1]),
+      month: monthNumber,
+      year: Number(labeledMatch[3])
+    };
+  }
+
+  const rashifalIndex = text.indexOf("राशिफल");
+
+  if (rashifalIndex < 0) {
+    return null;
+  }
+
+  const nearbyText = text.slice(
+    Math.max(0, rashifalIndex - 80),
+    rashifalIndex + 120
+  );
+
+  const nearbyMatch = nearbyText.match(
+    /(\d{1,2})\s+([^\s\d]+)\s+(\d{4})/
+  );
+
+  if (!nearbyMatch) {
+    return null;
+  }
+
+  const monthNumber =
+    NEPALI_MONTH_NAME_TO_NUMBER[nearbyMatch[2]] || null;
+
+  if (!monthNumber) {
+    return null;
+  }
+
+  return {
+    day: Number(nearbyMatch[1]),
+    month: monthNumber,
+    year: Number(nearbyMatch[3])
+  };
+}
+
+function getTodayBsParts(dateEn) {
+  const bsDate = adToBs(dateEn);
+
+  if (typeof bsDate === "string") {
+    const parts = bsDate.split("-");
+
+    return {
+      year: parseInt(parts[0], 10),
+      month: parseInt(parts[1], 10),
+      day: parseInt(parts[2], 10)
+    };
+  }
+
+  if (bsDate && typeof bsDate === "object") {
+    return {
+      year: Number(bsDate.year),
+      month: Number(bsDate.month),
+      day: Number(bsDate.day ?? bsDate.date)
+    };
+  }
+
+  return null;
+}
+
+function isCurrentDaySource(html, dateEn, sourceName) {
+  if (!html || !dateEn) {
+    return false;
+  }
+
+  const todayBs = getTodayBsParts(dateEn);
+
+  if (
+    !todayBs ||
+    !todayBs.year ||
+    !todayBs.month ||
+    !todayBs.day
+  ) {
+    return false;
+  }
+
+  if (sourceName === "HamroPatro") {
+    const sourceBs = parseHamroPatroSourceDateBs(html);
+
+    if (!sourceBs) {
+      console.warn(
+        "⚠️ HamroPatro source date फेला परेन। stale हुन सक्ने भएकाले Gemini मा पठाइँदैन।"
+      );
+
+      return false;
+    }
+
+    const isCurrent =
+      sourceBs.year === todayBs.year &&
+      sourceBs.month === todayBs.month &&
+      sourceBs.day === todayBs.day;
+
+    if (!isCurrent) {
+      console.warn(
+        `⏳ HamroPatro मा अझै आजको राशिफल आएको छैन (source BS ${sourceBs.year}-${sourceBs.month}-${sourceBs.day}, today BS ${todayBs.year}-${todayBs.month}-${todayBs.day})।`
+      );
+    }
+
+    return isCurrent;
+  }
+
+  // NepaliPatro: no verifiable per-day date in current HTML.
+  return false;
+}
+
+// ==========================================================
 // RANDOM DELAY
 // ==========================================================
 const randomDelay = (min = 5000, max = 10000) => {
@@ -204,7 +475,8 @@ async function scrapeWithRetry(url, name) {
 
         return {
           success: true,
-          text: scrapedText
+          text: scrapedText,
+          lastHtml: data
         };
       }
 
@@ -229,7 +501,8 @@ async function scrapeWithRetry(url, name) {
 
   return {
     success: false,
-    text: null
+    text: null,
+    lastHtml: null
   };
 }
 
@@ -237,7 +510,13 @@ async function scrapeWithRetry(url, name) {
 // FETCH RAW DATA
 // HamroPatro → NepaliPatro fallback
 // ==========================================================
-async function fetchRawData() {
+// Stale-source protection: a fetched page is only "current" when its
+// own date matches today's Nepali date. Unverified/stale content is
+// NEVER returned as today's source, so Gemini cannot stamp yesterday's
+// Rashifal with today's date. When html is needed for the date check,
+// scrapeWithRetry result is reused via lastHtml, avoiding extra calls.
+// ==========================================================
+async function fetchRawData(dateEn) {
   console.log(
     "📰 [SOURCE] पहिले HamroPatro बाट Rashifal data खोजिँदैछ..."
   );
@@ -248,18 +527,27 @@ async function fetchRawData() {
   );
 
   if (result.success) {
-    console.log(
-      "🟢 [SOURCE SELECTED] HamroPatro प्रयोग हुँदैछ।"
-    );
+    if (
+      dateEn &&
+      !isCurrentDaySource(result.lastHtml, dateEn, "HamroPatro")
+    ) {
+      console.warn(
+        "⏳ HamroPatro को source अझै आजको होइन। Gemini मा पठाइँदैन; अर्को scheduled retry मा फेरि जाँच हुनेछ।"
+      );
+    } else {
+      console.log(
+        "🟢 [SOURCE SELECTED] HamroPatro प्रयोग हुँदैछ।"
+      );
 
-    return {
-      data: result.text,
-      source: "HamroPatro"
-    };
+      return {
+        data: result.text,
+        source: "HamroPatro"
+      };
+    }
   }
 
   console.warn(
-    "🔴 [SOURCE FALLBACK] HamroPatro का सबै प्रयास असफल भए। अब NepaliPatro मा fallback हुँदैछ..."
+    "🔴 [SOURCE FALLBACK] HamroPatro बाट आजको Rashifal भेटिएन। अब NepaliPatro मा fallback हुँदैछ..."
   );
 
   await randomDelay(5000, 10000);
@@ -274,18 +562,27 @@ async function fetchRawData() {
   );
 
   if (backupResult.success) {
-    console.log(
-      "🟢 [SOURCE SELECTED] NepaliPatro fallback रूपमा प्रयोग हुँदैछ।"
-    );
+    if (
+      dateEn &&
+      !isCurrentDaySource(backupResult.lastHtml, dateEn, "NepaliPatro")
+    ) {
+      console.warn(
+        "⏳ NepaliPatro source को freshness verify हुन सकेन। stale हुन सक्ने भएकाले Gemini मा पठाइँदैन।"
+      );
+    } else {
+      console.log(
+        "🟢 [SOURCE SELECTED] NepaliPatro fallback रूपमा प्रयोग हुँदैछ।"
+      );
 
-    return {
-      data: backupResult.text,
-      source: "NepaliPatro"
-    };
+      return {
+        data: backupResult.text,
+        source: "NepaliPatro"
+      };
+    }
   }
 
   console.error(
-    "🔴 [SOURCE FAILED] HamroPatro र NepaliPatro दुवैबाट Rashifal data प्राप्त भएन।"
+    "🔴 [SOURCE FAILED] आजको Rashifal कुनै पनि source मा तयार छैन।"
   );
 
   return {
@@ -318,6 +615,66 @@ const GEMINI_RETRY_DELAYS = [
 // Per-request timeout so a hung Gemini call cannot hang the workflow
 // forever. Minimal fix: SDK calls have no timeout option, so race them.
 const GEMINI_REQUEST_TIMEOUT_MS = 60000;
+
+// Temporary model cooldowns: overloaded models recover later.
+// Cooldown ladder: ~5 min, then ~15 min, then ~30 min.
+const GEMINI_COOLDOWN_STEPS_MS = [
+  5 * 60 * 1000,
+  15 * 60 * 1000,
+  30 * 60 * 1000
+];
+
+const geminiModelCooldownUntil = new Map();
+const geminiModelTempFailureCount = new Map();
+const geminiModelPermanentlyUnusable = new Set();
+
+function isGeminiModelInCooldown(modelId) {
+  const until = geminiModelCooldownUntil.get(modelId) || 0;
+
+  if (Date.now() < until) {
+    return true;
+  }
+
+  if (until) {
+    geminiModelCooldownUntil.delete(modelId);
+  }
+
+  return false;
+}
+
+function markGeminiModelTemporaryFailure(modelId) {
+  const failures =
+    (geminiModelTempFailureCount.get(modelId) || 0) + 1;
+
+  geminiModelTempFailureCount.set(modelId, failures);
+
+  const stepIndex = Math.min(
+    failures - 1,
+    GEMINI_COOLDOWN_STEPS_MS.length - 1
+  );
+
+  const until =
+    Date.now() + GEMINI_COOLDOWN_STEPS_MS[stepIndex];
+
+  geminiModelCooldownUntil.set(modelId, until);
+
+  console.warn(
+    `⏳ ${modelId} temporary failure (${failures}x). Cooldown ${Math.round(GEMINI_COOLDOWN_STEPS_MS[stepIndex] / 60000)} min.`
+  );
+}
+
+function markGeminiModelRecovered(modelId) {
+  geminiModelTempFailureCount.delete(modelId);
+  geminiModelCooldownUntil.delete(modelId);
+}
+
+function getEligibleGeminiModels(models) {
+  return (models || []).filter(
+    (model) =>
+      !geminiModelPermanentlyUnusable.has(model.id) &&
+      !isGeminiModelInCooldown(model.id)
+  );
+}
 
 function withGeminiTimeout(promise, label = "Gemini request") {
   let timer;
@@ -661,12 +1018,16 @@ async function callGeminiWithValidator(
     );
   }
 
+  // Pass 0 uses the first eligible group for cost control. Later
+  // passes rotate through every still-eligible discovered model while
+  // respecting permanent failures and temporary cooldowns. Newly
+  // discovered usable models flow through availableModels unchanged.
   const candidateModels =
-    availableModels.slice(
+    getEligibleGeminiModels(availableModels).slice(
       0,
       Math.min(
         GEMINI_MAX_MODELS_PER_PASS,
-        availableModels.length
+        getEligibleGeminiModels(availableModels).length
       )
     );
 
@@ -684,8 +1045,8 @@ async function callGeminiWithValidator(
 
     const modelsForThisPass =
       pass === 0
-        ? candidateModels
-        : candidateModels.filter(
+        ? getEligibleGeminiModels(candidateModels)
+        : getEligibleGeminiModels(availableModels).filter(
             model =>
               failedTransientModels.has(
                 model.id
@@ -727,6 +1088,8 @@ async function callGeminiWithValidator(
         const parsed =
           validator(response.text);
 
+        markGeminiModelRecovered(model.id);
+
         console.log(
           `✅ ${model.id} बाट valid Rashifal response सफलतापूर्वक प्राप्त भयो!`
         );
@@ -752,6 +1115,8 @@ async function callGeminiWithValidator(
             `⏭️ ${model.id} permanently unusable/unavailable जस्तो देखियो। Retry गरिँदैन।`
           );
 
+          geminiModelPermanentlyUnusable.add(model.id);
+
           failedTransientModels.delete(
             model.id
           );
@@ -765,9 +1130,7 @@ async function callGeminiWithValidator(
         if (
           isRetryableGeminiError(err)
         ) {
-          console.log(
-            `⏳ ${model.id} temporary failure हो। Limited retry list मा राखियो।`
-          );
+          markGeminiModelTemporaryFailure(model.id);
 
           failedTransientModels.add(
             model.id
@@ -1100,6 +1463,13 @@ async function processAndGenerate(
         new Date().toISOString()
     };
 
+    dailyAttempt = {
+      date_en: dateEn,
+      done: true
+    };
+
+    savePersistedCache();
+
     console.log(
       `✅ Success! ${dateEn} को fresh local Nepali राशिफल successfully generate भयो र cache update भयो।`
     );
@@ -1119,7 +1489,14 @@ async function processAndGenerate(
 // ==========================================================
 // WORKFLOW
 // ==========================================================
-async function runWorkflow() {
+// Cache-first + stale-source guard:
+// - Today's valid cache stops before any scrape/Gemini work.
+// - Yesterday/old cache is cleared only when today's run begins.
+// - A manual/restart call for an already-completed date is a no-op.
+async function runWorkflow(options = {}) {
+  const reason = options.reason || "scheduled";
+  const force = options.force === true;
+
   if (workflowRunning) {
     console.log(
       "⚠️ Rashifal workflow already running. अर्को workflow सुरु गरिँदैन।"
@@ -1137,14 +1514,37 @@ async function runWorkflow() {
       date_np
     } = getNepaliDateText();
 
+    // New Nepali date resets the same-day completion marker.
+    if (dailyAttempt.date_en !== date_en) {
+      dailyAttempt = {
+        date_en: null,
+        done: false
+      };
+    }
+
+    if (!force && hasValidTodayCache(date_en)) {
+      console.log(
+        `✅ ${date_en} को राशिफल पहिले नै तयार छ। Gemini फेरि call गरिँदैन (${reason})।`
+      );
+
+      return true;
+    }
+
     console.log(
       `🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`
     );
 
-    cache = {
-      data: null,
-      last_updated: null
-    };
+    // Only today's workflow owns cache clearing. Manual same-day calls
+    // never wipe an existing valid cache for that date.
+    if (
+      !cache.data ||
+      cache.data.date !== date_en
+    ) {
+      cache = {
+        data: null,
+        last_updated: null
+      };
+    }
 
     // ------------------------------------------------------
     // SOURCE FETCH
@@ -1153,14 +1553,14 @@ async function runWorkflow() {
     const {
       data: rawData,
       source
-    } = await fetchRawData();
+    } = await fetchRawData(date_en);
 
     if (
       !rawData ||
       !rawData.trim()
     ) {
       console.error(
-        "❌ कुनै पनि Rashifal source बाट data प्राप्त भएन।"
+        "❌ आजको Rashifal source अझै तयार छैन। अर्को scheduled retry मा फेरि प्रयास हुनेछ।"
       );
 
       return false;
@@ -1184,11 +1584,6 @@ async function runWorkflow() {
       err.message
     );
 
-    cache = {
-      data: null,
-      last_updated: null
-    };
-
     return false;
 
   } finally {
@@ -1197,18 +1592,32 @@ async function runWorkflow() {
 }
 
 // ==========================================================
-// CRON — EVERY DAY AT 4:00 AM NEPAL TIME
+// DAILY 4:00-6:00 AM RETRY SCHEDULE — FIXED CRON TIMES ONLY
 // ==========================================================
-cron.schedule(
-  "0 4 * * *",
-  () => {
-    runWorkflow();
-  },
-  {
-    scheduled: true,
-    timezone: "Asia/Kathmandu"
-  }
-);
+// Exact required times: 4:00, 4:05, 4:15, 4:30, 5:00, 5:30, 5:50.
+// Each tick is cache-first, stale-source guarded, overlap guarded,
+// and stops entirely once today's Rashifal is cached. No loops,
+// no dynamic timers, so generation cannot continue past 6:00 AM.
+function scheduleDailyRetry(cronTime, label) {
+  cron.schedule(
+    cronTime,
+    () => {
+      runWorkflow({ reason: label });
+    },
+    {
+      scheduled: true,
+      timezone: "Asia/Kathmandu"
+    }
+  );
+}
+
+scheduleDailyRetry("0 4 * * *", "daily-4-00");
+scheduleDailyRetry("5 4 * * *", "daily-4-05");
+scheduleDailyRetry("15 4 * * *", "daily-4-15");
+scheduleDailyRetry("30 4 * * *", "daily-4-30");
+scheduleDailyRetry("0 5 * * *", "daily-5-00");
+scheduleDailyRetry("30 5 * * *", "daily-5-30");
+scheduleDailyRetry("50 5 * * *", "daily-5-50");
 
 // ==========================================================
 // RASIFAL API
@@ -1256,8 +1665,22 @@ app.get(
       });
     }
 
+    const {
+      date_en: todayDate
+    } = getNepaliDateText();
+
+    // Same Nepali date already completed: reuse cache, never regenerate.
+    if (hasValidTodayCache(todayDate)) {
+      return res.json({
+        status: "success",
+        message:
+          "आजको राशिफल पहिले नै तयार छ।",
+        data: cache.data
+      });
+    }
+
     const success =
-      await runWorkflow();
+      await runWorkflow({ reason: "manual" });
 
     if (success) {
       res.json({
@@ -1297,8 +1720,19 @@ app.listen(
       `🚀 Server running on port ${PORT}`
     );
 
-    if (!cache.data) {
-      await runWorkflow();
+    const {
+      date_en: startupDate
+    } = getNepaliDateText();
+
+    // Restart for an already-completed date is a no-op: cache-first
+    // runWorkflow returns before scrape/Gemini. It never regenerates
+    // the same Nepali date once dailyAttempt marks it done.
+    if (!hasValidTodayCache(startupDate)) {
+      await runWorkflow({ reason: "startup" });
+    } else {
+      console.log(
+        `✅ ${startupDate} को राशिफल पहिले नै तयार छ। Restart ले Gemini फेरि call गर्दैन।`
+      );
     }
   }
 );
