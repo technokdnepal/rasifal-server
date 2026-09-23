@@ -25,6 +25,9 @@ let cache = { data: null, last_updated: null };
 // Prevent overlapping Rashifal workflows
 let workflowRunning = false;
 
+// Prevent repeated DATE DEBUG logs for the same date
+let lastLoggedDateDebug = null;
+
 
 // ==========================================================
 // 🟢 DYNAMIC NEPALI DATE FUNCTION
@@ -144,9 +147,15 @@ function getNepaliDateText() {
     `${monthName} ${toNepaliDigits(bsDay)} ` +
     `${dayName} ${toNepaliDigits(bsYear)}`;
 
-  console.log(
-    `📅 [DATE DEBUG] AD: ${dateEn} → BS: ${dateNp}`
-  );
+  // Log the date only once for each target date.
+  // This does NOT affect date calculation or any server logic.
+  if (lastLoggedDateDebug !== dateEn) {
+    console.log(
+      `📅 [DATE DEBUG] AD: ${dateEn} → BS: ${dateNp}`
+    );
+
+    lastLoggedDateDebug = dateEn;
+  }
 
   return {
     date_en: dateEn,
@@ -1069,4 +1078,3 @@ app.listen(PORT, async () => {
     await runWorkflow();
   }
 });
-
