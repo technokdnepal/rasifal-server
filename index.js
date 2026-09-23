@@ -1035,10 +1035,11 @@ async function callGeminiWithValidator(
     );
   }
 
-  // Pass 0 uses the first eligible group for cost control. Later
-  // passes rotate through every still-eligible discovered model while
-  // respecting permanent failures and temporary cooldowns. Newly
-  // discovered usable models flow through availableModels unchanged.
+  // Pass 0 uses the first eligible group for cost control. Pass 1 keeps
+  // its 5-model limit. Later passes prefer eligible models that were not
+  // attempted yet, then retry this run's temporary failures once, so the
+  // immediate retry is not blocked by their just-set cooldown. Permanent
+  // failures stay excluded and cooldowns still gate later workflows.
   const candidateModels =
     getEligibleGeminiModels(availableModels).slice(
       0,
@@ -1049,6 +1050,11 @@ async function callGeminiWithValidator(
     );
 
   const failedTransientModels =
+    new Set();
+
+  // Models already attempted in this run, so later passes try untouched
+  // eligible models before repeating any model.
+  const attemptedModelIds =
     new Set();
 
   for (
@@ -1063,12 +1069,19 @@ async function callGeminiWithValidator(
     const modelsForThisPass =
       pass === 0
         ? getEligibleGeminiModels(candidateModels)
-        : getEligibleGeminiModels(availableModels).filter(
-            model =>
-              failedTransientModels.has(
-                model.id
-              )
-          );
+        : [
+            ...getEligibleGeminiModels(availableModels).filter(
+              model =>
+                !attemptedModelIds.has(model.id)
+            ),
+            ...availableModels.filter(
+              model =>
+                failedTransientModels.has(model.id) &&
+                !geminiModelPermanentlyUnusable.has(
+                  model.id
+                )
+            )
+          ];
 
     if (!modelsForThisPass.length) {
       console.log(
@@ -1079,6 +1092,8 @@ async function callGeminiWithValidator(
     }
 
     for (const model of modelsForThisPass) {
+      attemptedModelIds.add(model.id);
+
       try {
         console.log(
           `🤖 Google Gemini (${model.id}) प्रयोग गर्दै...`
