@@ -119,13 +119,19 @@ function hasValidTodayCache(dateEn) {
 // ==========================================================
 // DYNAMIC NEPALI DATE FUNCTION
 // ==========================================================
-function getNepaliDateText() {
+function getNepaliDateText(options = {}) {
   const nepalNow = moment().tz("Asia/Kathmandu");
   const hour = nepalNow.hour();
 
   let targetMoment = nepalNow.clone();
 
-  if (hour < 4) {
+  // Legacy 4 AM cutoff: before 4 AM counts as the previous Nepali day.
+  // Preserved for backward compatibility. The Rashifal workflow must NOT
+  // use this cutoff — it calls getRashifalDateText() instead, which always
+  // uses the actual current Nepal date.
+  const useCutoff = !(options && options.currentDate === true);
+
+  if (useCutoff && hour < 4) {
     targetMoment = targetMoment.subtract(1, "day");
   }
 
@@ -217,6 +223,17 @@ function getNepaliDateText() {
     day: dayName,
     date_np: dateNp
   };
+}
+
+// ==========================================================
+// RASHIFAL CURRENT-DATE — ACTUAL NEPAL DATE, NO 4 AM CUTOFF
+// ==========================================================
+// The Rashifal workflow always uses the actual current Nepal AD date →
+// current BS date, at 12:05 AM, 1:00 AM, 3:30 AM, 4:00 AM+, etc.
+// getNepaliDateText() keeps its legacy <4 AM rule untouched for any
+// other non-Rashifal behavior.
+function getRashifalDateText() {
+  return getNepaliDateText({ currentDate: true });
 }
 
 // ==========================================================
@@ -1512,7 +1529,7 @@ async function runWorkflow(options = {}) {
       date_en,
       day,
       date_np
-    } = getNepaliDateText();
+    } = getRashifalDateText();
 
     // New Nepali date resets the same-day completion marker.
     if (dailyAttempt.date_en !== date_en) {
@@ -1633,7 +1650,7 @@ app.get(
   (req, res) => {
     const {
       date_en: currentDate
-    } = getNepaliDateText();
+    } = getRashifalDateText();
 
     if (!cache.data) {
       return res.status(503).json({
@@ -1673,7 +1690,7 @@ app.get(
 
     const {
       date_en: todayDate
-    } = getNepaliDateText();
+    } = getRashifalDateText();
 
     // Same Nepali date already completed: reuse cache, never regenerate.
     if (hasValidTodayCache(todayDate)) {
@@ -1728,7 +1745,7 @@ app.listen(
 
     const {
       date_en: startupDate
-    } = getNepaliDateText();
+    } = getRashifalDateText();
 
     // Restart for an already-completed date is a no-op: cache-first
     // runWorkflow returns before scrape/Gemini. It never regenerates
