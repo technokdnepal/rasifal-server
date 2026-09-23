@@ -179,8 +179,7 @@ async function scrapeWithRetry(url, name) {
 
       // ------------------------------------------------------
       // If the selected container is missing or too short,
-      // collect paragraph text as a fallback within the same
-      // source attempt.
+      // collect paragraph text as a fallback.
       // ------------------------------------------------------
       if (scrapedText.length <= 200) {
         let paragraphText = "";
@@ -236,6 +235,7 @@ async function scrapeWithRetry(url, name) {
 
 // ==========================================================
 // FETCH RAW DATA
+// HamroPatro → NepaliPatro fallback
 // ==========================================================
 async function fetchRawData() {
   console.log(
@@ -297,16 +297,16 @@ async function fetchRawData() {
 // ==========================================================
 // GEMINI CONTROLLED RETRY SETTINGS
 // ==========================================================
-
-// IMPORTANT:
-// This is intentionally FINITE.
 //
-// Maximum per Gemini stage:
-// - Initial pass: up to 5 different usable models
-// - Controlled retry pass: only temporary-failure models
+// Direct Gemini generation मात्र हुन्छ।
+//
+// Maximum:
+// - Initial pass: up to 5 usable models
+// - Controlled retry: temporary-failed models मात्र
 // - Maximum 2 passes
 //
-// There is NO infinite retry loop.
+// कुनै infinite retry loop छैन।
+// ==========================================================
 const GEMINI_MAX_MODELS_PER_PASS = 5;
 const GEMINI_MAX_PASSES = 2;
 
@@ -320,7 +320,7 @@ function sleep(ms) {
 }
 
 // ==========================================================
-// Extract HTTP/status/error information safely
+// EXTRACT GEMINI ERROR INFO
 // ==========================================================
 function getGeminiErrorInfo(err) {
   let status =
@@ -361,7 +361,7 @@ function getGeminiErrorInfo(err) {
 }
 
 // ==========================================================
-// Detect permanent / unusable Gemini errors
+// DETECT PERMANENT / UNUSABLE GEMINI ERRORS
 // ==========================================================
 function isPermanentGeminiError(err) {
   const {
@@ -385,7 +385,7 @@ function isPermanentGeminiError(err) {
 }
 
 // ==========================================================
-// Detect retryable temporary Gemini errors
+// DETECT RETRYABLE TEMPORARY GEMINI ERRORS
 // ==========================================================
 function isRetryableGeminiError(err) {
   const {
@@ -410,7 +410,7 @@ function isRetryableGeminiError(err) {
 }
 
 // ==========================================================
-// Discover currently available Gemini Flash models
+// DISCOVER CURRENTLY AVAILABLE GEMINI FLASH MODELS
 // ==========================================================
 async function getAvailableGeminiModels() {
   console.log(
@@ -540,118 +540,13 @@ async function getAvailableGeminiModels() {
 }
 
 // ==========================================================
-// PARSE GENERIC GEMINI JSON
+// CLEAN GEMINI JSON
 // ==========================================================
 function cleanGeminiJson(content) {
   return content
     .replace(/```json/g, "")
     .replace(/```/g, "")
     .trim();
-}
-
-// ==========================================================
-// VALIDATE ENGLISH INTERMEDIATE
-// ==========================================================
-function parseAndValidateEnglishIntermediate(
-  content
-) {
-  const cleanJson =
-    cleanGeminiJson(content);
-
-  const parsed =
-    JSON.parse(cleanJson);
-
-  if (
-    !parsed ||
-    typeof parsed !== "object"
-  ) {
-    throw new Error(
-      "Gemini returned invalid English intermediate JSON."
-    );
-  }
-
-  if (
-    !Array.isArray(parsed.data) ||
-    parsed.data.length !== 12
-  ) {
-    throw new Error(
-      "English intermediate must contain exactly 12 zodiac signs."
-    );
-  }
-
-  for (const item of parsed.data) {
-    if (
-      !item ||
-      typeof item.sign !== "string" ||
-      typeof item.sign_np !== "string" ||
-      typeof item.meaning !== "string" ||
-      !item.meaning.trim()
-    ) {
-      throw new Error(
-        "English intermediate contains incomplete zodiac data."
-      );
-    }
-  }
-
-  return parsed;
-}
-
-// ==========================================================
-// VALIDATE FRESH HOROSCOPE IDEAS
-// ==========================================================
-function parseAndValidateFreshIdeas(
-  content
-) {
-  const cleanJson =
-    cleanGeminiJson(content);
-
-  const parsed =
-    JSON.parse(cleanJson);
-
-  if (
-    !parsed ||
-    typeof parsed !== "object"
-  ) {
-    throw new Error(
-      "Gemini returned invalid fresh-ideas JSON."
-    );
-  }
-
-  if (
-    !Array.isArray(parsed.data) ||
-    parsed.data.length !== 12
-  ) {
-    throw new Error(
-      "Fresh horoscope ideas must contain exactly 12 zodiac signs."
-    );
-  }
-
-  for (const item of parsed.data) {
-    if (
-      !item ||
-      typeof item.sign !== "string" ||
-      typeof item.sign_np !== "string" ||
-      !Array.isArray(item.angles) ||
-      item.angles.length !== 4
-    ) {
-      throw new Error(
-        "Fresh horoscope ideas must contain exactly 4 angles per zodiac sign."
-      );
-    }
-
-    for (const angle of item.angles) {
-      if (
-        typeof angle !== "string" ||
-        !angle.trim()
-      ) {
-        throw new Error(
-          "Fresh horoscope angle is empty."
-        );
-      }
-    }
-  }
-
-  return parsed;
 }
 
 // ==========================================================
@@ -803,7 +698,7 @@ async function callGeminiWithValidator(
           validator(response.text);
 
         console.log(
-          `✅ ${model.id} बाट valid response सफलतापूर्वक प्राप्त भयो!`
+          `✅ ${model.id} बाट valid Rashifal response सफलतापूर्वक प्राप्त भयो!`
         );
 
         return parsed;
@@ -864,7 +759,6 @@ async function callGeminiWithValidator(
       }
     }
 
-    // No second pass
     if (
       pass >=
       GEMINI_MAX_PASSES - 1
@@ -899,346 +793,121 @@ async function callGeminiWithValidator(
 }
 
 // ==========================================================
-// TRANSLATE RAW NEPALI → ENGLISH SEMANTIC INTERMEDIATE
+// DIRECT GEMINI → NATURAL LOCAL NEPALI RASHIFAL
 // ==========================================================
-async function translateRawToEnglish(
+async function generateDirectNepali(
   rawContent,
-  availableModels
-) {
-  const translationPrompt = `You are the first semantic-analysis stage of a daily horoscope content pipeline.
-
-The supplied text comes from a Nepali horoscope source.
-
-Your task is NOT to write the final horoscope.
-
-Your task is to understand the underlying meaning of the source and create a clean English semantic intermediate for a SECOND AI stage.
-
-IMPORTANT:
-- Do not produce final Nepali text.
-- Do not copy the original sentence structure.
-- Do not translate sentence-by-sentence.
-- Do not preserve the original wording.
-- Do not add predictions that are absent from the source.
-- Preserve the broad astrological themes and useful meaning.
-- Combine related ideas when appropriate.
-- Ignore lucky colors, lucky numbers, lucky directions and gemstones.
-- Exactly 12 zodiac signs are required.
-- Keep the meaning concise.
-- The next AI will use this semantic representation to create fresh horoscope ideas.
-- This is a semantic abstraction, not a literal translation.
-
-Raw source:
-${rawContent.substring(0, 12000)}
-
-Return ONLY valid JSON:
-
-{
-  "data": [
-    {
-      "sign": "Aries",
-      "sign_np": "मेष",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Taurus",
-      "sign_np": "वृष",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Gemini",
-      "sign_np": "मिथुन",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Cancer",
-      "sign_np": "कर्कट",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Leo",
-      "sign_np": "सिंह",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Virgo",
-      "sign_np": "कन्या",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Libra",
-      "sign_np": "तुला",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Scorpio",
-      "sign_np": "वृश्चिक",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Sagittarius",
-      "sign_np": "धनु",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Capricorn",
-      "sign_np": "मकर",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Aquarius",
-      "sign_np": "कुम्भ",
-      "meaning": "Concise English semantic meaning."
-    },
-    {
-      "sign": "Pisces",
-      "sign_np": "मीन",
-      "meaning": "Concise English semantic meaning."
-    }
-  ]
-}
-
-Return nothing except the JSON object.`;
-
-  return await callGeminiWithValidator(
-    translationPrompt,
-    parseAndValidateEnglishIntermediate,
-    availableModels
-  );
-}
-
-// ==========================================================
-// CREATE FOUR FRESH HOROSCOPE IDEAS / ANGLES
-// ==========================================================
-async function createFreshHoroscopeIdeas(
-  englishIntermediate,
-  availableModels
-) {
-  const ideasPrompt = `You are the creative planning stage of a Nepali daily horoscope.
-
-You are given an ENGLISH SEMANTIC INTERMEDIATE derived from source horoscope material.
-
-Your job is to create FOUR fresh conversational horoscope ideas/angles for EACH zodiac sign.
-
-This is NOT the final horoscope yet.
-
-The four ideas should:
-- Represent the underlying meaning from the semantic input.
-- Be naturally reorganized rather than following the original source sentence order.
-- Use different angles or perspectives where possible.
-- Avoid sentence-by-sentence paraphrasing.
-- Avoid repeating the same wording from the source.
-- Avoid simply translating the English meaning back into Nepali.
-- Keep the same broad astrological message.
-- Never invent unrelated predictions.
-- Do not include lucky colors, numbers, directions or gemstones.
-- Do not mention the source.
-- Do not mention AI, translation, scraping or rewriting.
-- Each sign must have exactly FOUR distinct ideas.
-
-Think about the overall message first, then create four independent conversational angles.
-
-English semantic intermediate:
-${JSON.stringify(
-  englishIntermediate.data,
-  null,
-  2
-)}
-
-Return ONLY valid JSON:
-
-{
-  "data": [
-    {
-      "sign": "Aries",
-      "sign_np": "मेष",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Taurus",
-      "sign_np": "वृष",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Gemini",
-      "sign_np": "मिथुन",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Cancer",
-      "sign_np": "कर्कट",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Leo",
-      "sign_np": "सिंह",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Virgo",
-      "sign_np": "कन्या",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Libra",
-      "sign_np": "तुला",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Scorpio",
-      "sign_np": "वृश्चिक",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Sagittarius",
-      "sign_np": "धनु",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Capricorn",
-      "sign_np": "मकर",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Aquarius",
-      "sign_np": "कुम्भ",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    },
-    {
-      "sign": "Pisces",
-      "sign_np": "मीन",
-      "angles": [
-        "Fresh idea or angle one.",
-        "Fresh idea or angle two.",
-        "Fresh idea or angle three.",
-        "Fresh idea or angle four."
-      ]
-    }
-  ]
-}
-
-Return nothing except the JSON object.`;
-
-  return await callGeminiWithValidator(
-    ideasPrompt,
-    parseAndValidateFreshIdeas,
-    availableModels
-  );
-}
-
-// ==========================================================
-// GENERATE FINAL FRESH NEPALI FROM NEW IDEAS
-// ==========================================================
-async function generateFreshNepali(
-  freshIdeas,
   dateEn,
   dayName,
   dateNp,
   availableModels
 ) {
-  const generationPrompt = `You are an original Nepali horoscope writer.
+  const generationPrompt = `तिमी नेपाली राशिफल लेख्ने लेखक हौ।
 
-You are given FOUR FRESH HOROSCOPE IDEAS for each zodiac sign.
+तल दिइएको सामग्री हाम्रो पात्रो/अन्य राशिफल स्रोतबाट आएको कच्चा नेपाली राशिफल हो।
 
-Your task is to turn those ideas into a completely natural, original Nepali daily horoscope.
+तिम्रो काम भनेको त्यसमा लेखिएको मुख्य अर्थ, सन्देश र राशिफलका कुराहरू बुझेर त्यही अर्थ कायम राख्दै नयाँ तरिकाले राशिफल लेख्नु हो।
 
-IMPORTANT:
-- Do NOT translate the original source.
-- Do NOT paraphrase the source sentence-by-sentence.
-- Do NOT reconstruct the original source sentence order.
-- The four supplied ideas have already been reorganized specifically to avoid source-like structure.
-- Write the final text in your own natural Nepali wording.
-- Use simple conversational Nepali.
-- Make it sound like a human-written Nepali daily horoscope.
-- Avoid heavy Sanskritized language.
-- Do not use the zodiac sign name inside the prediction.
-- Do not start with "आजको दिन" or "यस दिन".
-- Do not mention HamroPatro, NepaliPatro, source, translation, scraping or AI.
-- Do not use quotations.
-- Do not add lucky colors, lucky numbers, lucky directions or gemstones.
-- Do not invent unrelated predictions.
-- Do not add details that are not supported by the provided ideas.
-- Each zodiac sign MUST contain exactly 4 sentences.
-- Each sentence should express one of the four ideas naturally.
-- Do not copy the wording of the ideas literally.
-- Vary sentence structure naturally.
-- Avoid awkward mixed-language grammar.
-- Use proper Nepali punctuation.
+सबैभन्दा महत्वपूर्ण कुरा:
 
-The goal is:
+१. स्रोतको कुरा र अर्थ नबिगार।
+२. तर स्रोतका वाक्यहरू जस्ताको तस्तै copy नगर।
+३. स्रोतका शब्दहरू मात्र साटेर sentence-by-sentence paraphrase पनि नगर।
+४. वाक्यको structure, शब्द छनोट र लेख्ने तरिका आफ्नै बनाऊ।
+५. स्रोतमा नभएको नयाँ भविष्यवाणी, घटना वा दाबी नथप।
+६. स्रोतमा भएको मुख्य कुरा भने छुट्न नदेऊ।
+७. अन्तिम लेखाइ नेपालीमै हुनुपर्छ।
 
-SOURCE MEANING
-→ ENGLISH SEMANTIC UNDERSTANDING
-→ FRESH HOROSCOPE IDEAS / ANGLES
-→ ORIGINAL NATURAL NEPALI
+NEPALI STYLE:
 
-The final result must NOT read like a direct translation or close paraphrase of the source.
+- एकदमै natural र local नेपाली प्रयोग गर।
+- नेपालमा सामान्य मान्छेले दैनिक कुराकानीमा बोल्ने नेपालीजस्तो बनाऊ।
+- चिया पसलमा, स्कुल-कलेजमा वा साथीभाइसँग सामान्य कुरा गर्दा सुनिने सहज नेपालीको शैली सम्झ।
+- धेरै संस्कृतनिष्ठ, किताबी वा पुरानो शैलीको नेपाली नलेख।
+- अनावश्यक गाह्रो शब्द नचलाऊ।
+- अत्यधिक formal नेपाली नबनाऊ।
+- पढ्दा "AI ले लेखेको" वा "translation गरेको" जस्तो महसुस नहोस्।
+- सामान्य नेपाली user ले सजिलै बुझ्ने भाषा प्रयोग गर।
+- नेपाली वाक्यभित्र अनावश्यक English शब्द नहाल।
+- तर नेपालमा दैनिक बोलिचालीमै चल्ने सामान्य शब्द आवश्यक परे प्रयोग गर्न सकिन्छ।
+- भाषा natural, smooth र conversational हुनुपर्छ।
 
-The date MUST remain exactly:
+CONTENT RULES:
+
+- जम्मा १२ वटा राशिका लागि राशिफल लेख।
+- प्रत्येक राशिमा ठ्याक्कै ४ वटा वाक्य हुनुपर्छ।
+- प्रत्येक वाक्यमा फरक मुख्य कुरा/angle समेट।
+- राशिको नाम prediction भित्र नलेख।
+- "आजको दिन" बाट prediction सुरु नगर।
+- "यस दिन" बाट prediction सुरु नगर।
+- lucky color नलेख।
+- lucky number नलेख।
+- lucky direction नलेख।
+- gemstone/रत्न नलेख।
+- स्रोतमा नभएको कुरा आफैंबाट नबनाऊ।
+- एउटै कुरा घुमाएर चार पटक नलेख।
+- चारवटै वाक्य जोडिएर एउटा natural horoscope paragraph जस्तो लाग्नुपर्छ।
+- अत्यधिक सकारात्मक वा अत्यधिक नकारात्मक बनाएर अर्थ नबदल।
+- स्रोतको मूल सन्देशलाई प्राथमिकता देऊ।
+- वाक्यहरू प्राकृतिक र फरक structure का बनाऊ।
+- प्रत्येक राशिको prediction ४ वाक्य मात्र होस्।
+- हरेक वाक्यको अन्त्यमा नेपाली पूर्णविराम "।" प्रयोग गर।
+
+SOURCE REWRITING PRINCIPLE:
+
+SOURCE:
+स्रोतमा जे भनिएको छ त्यसको अर्थ बुझ।
+
+THEN:
+त्यही अर्थलाई नयाँ शब्द, नयाँ sentence structure र natural local Nepali writing style मा लेख।
+
+DO NOT:
+- literal translation
+- sentence-by-sentence paraphrase
+- word replacement मात्र
+- source को sentence order copy
+- source को exact phrase copy
+
+DO:
+- meaning preserve
+- natural restructuring
+- fresh wording
+- conversational Nepali
+- human-like local Nepali tone
+
+उदाहरण:
+
+यदि स्रोतमा:
+"काममा नयाँ अवसर प्राप्त हुन सक्छ। सहकर्मीबाट सहयोग मिल्नेछ।"
+
+भने यसलाई:
+"कामको सिलसिलामा नयाँ मौका भेटिन सक्छ। वरिपरिका मानिसको साथ पाएपछि केही काम सजिलै अघि बढ्ने देखिन्छ।"
+
+जस्तो नयाँ तर natural शैलीमा लेख्न सकिन्छ।
+
+अर्थ उही छ, तर शब्द र sentence structure फरक छन्।
+
+DATE:
+
+अन्तिम JSON मा date_np, date र day यी तीनवटै field अनिवार्य छन्।
+
+date:
+"${dateEn}"
+
+day:
+"${dayName}"
+
+date_np:
 "${dateNp}"
 
-Fresh horoscope ideas:
-${JSON.stringify(
-  freshIdeas.data,
-  null,
-  2
-)}
+RAW SOURCE RASHIFAL:
+${rawContent.substring(0, 16000)}
 
-Return ONLY this JSON:
+अब स्रोतको अर्थ राम्ररी बुझेर त्यसलाई नयाँ, natural, local Nepali भाषामा लेख।
+
+Return ONLY valid JSON.
+
+JSON structure:
 
 {
   "date_np": "${dateNp}",
@@ -1249,71 +918,74 @@ Return ONLY this JSON:
     {
       "sign": "Aries",
       "sign_np": "मेष",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Taurus",
       "sign_np": "वृष",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Gemini",
       "sign_np": "मिथुन",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Cancer",
       "sign_np": "कर्कट",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Leo",
       "sign_np": "सिंह",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Virgo",
       "sign_np": "कन्या",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Libra",
       "sign_np": "तुला",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Scorpio",
       "sign_np": "वृश्चिक",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Sagittarius",
       "sign_np": "धनु",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Capricorn",
       "sign_np": "मकर",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Aquarius",
       "sign_np": "कुम्भ",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     },
     {
       "sign": "Pisces",
       "sign_np": "मीन",
-      "prediction": "चार वटा प्राकृतिक नेपाली वाक्य।"
+      "prediction": "चार वटा natural नेपाली वाक्य।"
     }
   ]
 }
 
 CRITICAL:
-Return ONLY valid JSON.
-No markdown.
-No explanation.
-No extra text.`;
+- Return ONLY valid JSON.
+- No markdown.
+- No explanation.
+- No extra text.
+- Exactly 12 zodiac signs.
+- Exactly 4 sentences per prediction.
+- Natural local Nepali only.`;
 
   return await callGeminiWithValidator(
     generationPrompt,
@@ -1356,12 +1028,12 @@ async function processAndGenerate(
   }
 
   console.log(
-    `📰 [PIPELINE SOURCE] ${sourceUsed} को data प्रयोग गरेर Rashifal pipeline सुरु हुँदैछ।`
+    `📰 [DIRECT GEMINI] ${sourceUsed} को raw Rashifal data सिधै Gemini लाई दिइँदैछ।`
   );
 
   try {
     // ------------------------------------------------------
-    // DISCOVER MODELS ONLY ONCE FOR THIS WORKFLOW
+    // DISCOVER MODELS ONLY ONCE
     // ------------------------------------------------------
     console.log(
       "🔎 [GEMINI] यो workflow का लागि usable models एकपटक मात्र discover गरिँदैछ..."
@@ -1377,53 +1049,15 @@ async function processAndGenerate(
     }
 
     // ------------------------------------------------------
-    // STEP 1: RAW NEPALI → ENGLISH SEMANTIC INTERMEDIATE
+    // DIRECT GENERATION
     // ------------------------------------------------------
     console.log(
-      "🌐 STEP 1/3: Raw Nepali source लाई English semantic meaning मा बदलिँदैछ..."
-    );
-
-    const englishIntermediate =
-      await translateRawToEnglish(
-        rawContent,
-        availableModels
-      );
-
-    console.log(
-      "✅ STEP 1/3 complete: English semantic intermediate तयार भयो।"
-    );
-
-    console.log(
-      `📊 English intermediate मा ${englishIntermediate.data.length} वटा zodiac signs छन्।`
-    );
-
-    // ------------------------------------------------------
-    // STEP 2: CREATE FRESH HOROSCOPE IDEAS / ANGLES
-    // ------------------------------------------------------
-    console.log(
-      "💡 STEP 2/3: प्रत्येक राशिका लागि 4 वटा fresh horoscope ideas/angles तयार हुँदैछन्..."
-    );
-
-    const freshIdeas =
-      await createFreshHoroscopeIdeas(
-        englishIntermediate,
-        availableModels
-      );
-
-    console.log(
-      "✅ STEP 2/3 complete: Fresh horoscope ideas/angles तयार भए।"
-    );
-
-    // ------------------------------------------------------
-    // STEP 3: FRESH IDEAS → NATURAL NEPALI
-    // ------------------------------------------------------
-    console.log(
-      "✍️ STEP 3/3: Fresh ideas बाट original natural Nepali Rashifal तयार हुँदैछ..."
+      "✍️ [DIRECT GEMINI] Raw Nepali Rashifal को अर्थ बुझेर fresh local Nepali Rashifal तयार हुँदैछ..."
     );
 
     const generatedData =
-      await generateFreshNepali(
-        freshIdeas,
+      await generateDirectNepali(
+        rawContent,
         dateEn,
         dayName,
         dateNp,
@@ -1437,7 +1071,7 @@ async function processAndGenerate(
     };
 
     console.log(
-      `✅ Success! ${dateEn} को fresh Nepali राशिफल successfully generate भयो र cache update भयो।`
+      `✅ Success! ${dateEn} को fresh local Nepali राशिफल successfully generate भयो र cache update भयो।`
     );
 
     return true;
