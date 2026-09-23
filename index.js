@@ -1,3 +1,4 @@
+````javascript
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -22,6 +23,9 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 let cache = { data: null, last_updated: null };
 
+// Prevent overlapping Rashifal workflows
+let workflowRunning = false;
+
 
 // ==========================================================
 // 🟢 DYNAMIC NEPALI DATE FUNCTION
@@ -35,7 +39,7 @@ let cache = { data: null, last_updated: null };
 // 2026-09-03 बिहान 4:00 पछि → 2083 भदौ 18
 //
 // English date (date_en) पनि यही 4 AM cutoff अनुसार
-// अघिल्लो दिन / current day हुन्छ।
+// अघिल्लो दिन / current day हुन्छ.
 // ==========================================================
 
 function getNepaliDateText() {
@@ -267,58 +271,542 @@ async function fetchRawData() {
 
 
 // ==========================================================
-// GEMINI MODELS
+// GEMINI MODEL DISCOVERY + RETRY
 // ==========================================================
 
-const AVAILABLE_MODELS = [
-  "gemini-3.7-flash",
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-2.5-flash"
+// Retry schedule:
+// 5 sec → 10 sec → 20 sec → 30 sec → 40 sec → 60 sec
+// After that, continue every 60 seconds until successful.
+const GEMINI_RETRY_DELAYS = [
+  5000,
+  10000,
+  20000,
+  30000,
+  40000,
+  60000
 ];
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-// ==========================================================
-// GEMINI AI
-// ==========================================================
 
-async function callGeminiAI(promptText) {
-  for (const modelName of AVAILABLE_MODELS) {
-    try {
-      console.log(
-        `🤖 Google Gemini (${modelName}) प्रयोग गर्दै...`
-      );
+// ----------------------------------------------------------
+// Extract HTTP/status information safely
+// ----------------------------------------------------------
 
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: promptText,
+function getGeminiErrorInfo(err) {
+  let status =
+    err?.status ??
+    err?.code ??
+    err?.response?.status ??
+    null;
+
+  let message = err?.message || String(err);
+
+  // Sometimes SDK puts the actual JSON error inside message
+  try {
+    const parsed = JSON.parse(message);
+
+    if (parsed?.error) {
+      status = parsed.error.code ?? status;
+      message = parsed.error.message || message;
+    }
+  } catch (_) {
+    // Ignore JSON parse failure
+  }
+
+  return {
+    status: Number(status) || null,
+    message
+  };
+}
+
+
+// ----------------------------------------------------------
+// Permanent model errors
+// ----------------------------------------------------------
+// These should NOT be retried forever.
+//
+// 404 = model not found / unsupported
+// 400 = invalid model/request
+// 401 = invalid authentication
+// 403 = permission / blocked / unavailable for this key
+// ----------------------------------------------------------
+
+function isPermanentGeminiError(err) {
+  const { status, message } = getGeminiErrorInfo(err);
+
+  if ([400, 401, 403, 404].includes(status)) {
+    return true;
+  }
+
+  const text = message.toLowerCase();
+
+  return (
+    text.includes("not found") ||
+    text.includes("no longer available") ||
+    text.includes("not supported") ||
+    text.includes("unsupported model") ||
+    text.includes("deprecated") ||
+    text.includes("invalid model")
+  );
+}
+
+
+// ----------------------------------------------------------
+// Temporary Gemini errors
+// ----------------------------------------------------------
+// 429 = rate limit / quota pressure
+// 500/502/503/504 = temporary server-side problems
+// ----------------------------------------------------------
+
+function isRetryableGeminiError(err) {
+  const { status, message } = getGeminiErrorInfo(err);
+
+  if ([429, 500, 502, 503, 504].includes(status)) {
+    return true;
+  }
+
+  const text = message.toLowerCase();
+
+  return (
+    text.includes("high demand") ||
+    text.includes("temporarily unavailable") ||
+    text.includes("service unavailable") ||
+    text.includes("rate limit") ||
+    text.includes("quota") ||
+    text.includes("try again later")
+  );
+}
+
+
+// ----------------------------------------------------------
+// Discover currently available Gemini Flash models
+// ----------------------------------------------------------
+
+async function getAvailableGeminiModels() {
+  console.log(
+    "🔎 Google Gemini बाट अहिले उपलब्ध models खोज्दै..."
+  );
+
+  const pager = await ai.models.list({
+    config: {
+      pageSize: 100
+    }
+  });
+
+  const discovered = [];
+
+  for await (const model of pager) {
+    const name =
+      model?.baseModelId ||
+      (model?.name ? model.name.replace(/^models\//, "") : "");
+
+    if (!name) {
+      continue;
+    }
+
+    const lowerName = name.toLowerCase();
+
+    const supportedMethods =
+      model?.supportedGenerationMethods ||
+      model?.supportedActions ||
+      [];
+
+    const supportsGenerateContent =
+      supportedMethods.includes("generateContent");
+
+    // Only Gemini Flash text-generation models.
+    // Preview/experimental/live/image/embedding models are excluded.
+    const isGeminiFlash =
+      lowerName.startsWith("gemini-") &&
+      lowerName.includes("flash");
+
+    const isUnstableVariant =
+      lowerName.includes("preview") ||
+      lowerName.includes("experimental") ||
+      lowerName.includes("-exp") ||
+      lowerName.includes("-live") ||
+      lowerName.includes("image") ||
+      lowerName.includes("embedding") ||
+      lowerName.includes("tts");
+
+    if (
+      isGeminiFlash &&
+      supportsGenerateContent &&
+      !isUnstableVariant
+    ) {
+      discovered.push({
+        id: name,
+        displayName: model?.displayName || name,
+        version: model?.version || ""
       });
+    }
+  }
 
-      if (response && response.text) {
-        console.log(
-          `✅ ${modelName} बाट सफलतापूर्वक नतिजा आयो!`
-        );
+  // Remove duplicates
+  const uniqueModels = [];
+  const seen = new Set();
 
-        return response.text;
-      }
-    } catch (err) {
-      console.warn(
-        `⚠️ मोडल ${modelName} मा समस्या देखियो: ${err.message}`
-      );
+  for (const model of discovered) {
+    if (!seen.has(model.id)) {
+      seen.add(model.id);
+      uniqueModels.push(model);
+    }
+  }
 
-      console.log(
-        `🔄 अर्को लाइभ मोडलमा तुरुन्त जाँदैछ...`
-      );
+  // Prefer normal Flash over Flash-Lite.
+  // Then prefer higher numeric Gemini versions.
+  uniqueModels.sort((a, b) => {
+    const aLite = a.id.toLowerCase().includes("flash-lite");
+    const bLite = b.id.toLowerCase().includes("flash-lite");
 
-      await new Promise(resolve =>
-        setTimeout(resolve, 2000)
+    if (aLite !== bLite) {
+      return aLite ? 1 : -1;
+    }
+
+    const aNumbers = (
+      a.id.match(/gemini-(\d+(?:\.\d+)?)/i)?.[1] || "0"
+    );
+
+    const bNumbers = (
+      b.id.match(/gemini-(\d+(?:\.\d+)?)/i)?.[1] || "0"
+    );
+
+    return Number(bNumbers) - Number(aNumbers);
+  });
+
+  console.log(
+    `✅ ${uniqueModels.length} वटा usable Gemini Flash models भेटिए:`
+  );
+
+  uniqueModels.forEach((model, index) => {
+    console.log(
+      `   ${index + 1}. ${model.id}`
+    );
+  });
+
+  return uniqueModels;
+}
+
+
+// ----------------------------------------------------------
+// Parse and validate Gemini JSON
+// ----------------------------------------------------------
+
+function parseAndValidateGeminiResult(content, expectedDate) {
+  const cleanJson = content
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  const parsed = JSON.parse(cleanJson);
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Gemini returned invalid JSON object.");
+  }
+
+  if (parsed.date !== expectedDate) {
+    throw new Error(
+      `Gemini returned wrong date. Expected ${expectedDate}, got ${parsed.date}`
+    );
+  }
+
+  if (!Array.isArray(parsed.data) || parsed.data.length !== 12) {
+    throw new Error(
+      "Gemini returned invalid zodiac data. Exactly 12 signs are required."
+    );
+  }
+
+  for (const item of parsed.data) {
+    if (
+      !item ||
+      typeof item.sign !== "string" ||
+      typeof item.sign_np !== "string" ||
+      typeof item.prediction !== "string" ||
+      !item.prediction.trim()
+    ) {
+      throw new Error(
+        "Gemini returned incomplete zodiac prediction data."
       );
     }
   }
 
-  throw new Error(
-    "❌ सबै गुगल जेमिनी मोडलहरू पूर्ण रूपमा असफल भए!"
+  return parsed;
+}
+
+
+// ----------------------------------------------------------
+// Generate using one model
+// ----------------------------------------------------------
+
+async function generateWithSingleModel(
+  modelName,
+  promptText,
+  expectedDate
+) {
+  console.log(
+    `🤖 Google Gemini (${modelName}) प्रयोग गर्दै...`
   );
+
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents: promptText,
+  });
+
+  if (!response || !response.text) {
+    throw new Error(
+      `${modelName} returned an empty response.`
+    );
+  }
+
+  const parsed = parseAndValidateGeminiResult(
+    response.text,
+    expectedDate
+  );
+
+  console.log(
+    `✅ ${modelName} बाट valid Rashifal सफलतापूर्वक तयार भयो!`
+  );
+
+  return parsed;
+}
+
+
+// ----------------------------------------------------------
+// GEMINI AI WITH DYNAMIC MODEL FAILOVER + RETRY
+// ----------------------------------------------------------
+
+async function callGeminiAI(promptText, expectedDate) {
+  let retryModels = [];
+  let delayIndex = 0;
+
+  while (true) {
+    let availableModels;
+
+    try {
+      availableModels = await getAvailableGeminiModels();
+    } catch (err) {
+      console.error(
+        `❌ Gemini models list गर्न समस्या: ${err.message}`
+      );
+
+      const delay =
+        GEMINI_RETRY_DELAYS[
+          Math.min(
+            delayIndex,
+            GEMINI_RETRY_DELAYS.length - 1
+          )
+        ];
+
+      console.log(
+        `🔄 ${delay / 1000} sec पछि models फेरि खोजिँदैछ...`
+      );
+
+      await sleep(delay);
+
+      if (
+        delayIndex <
+        GEMINI_RETRY_DELAYS.length - 1
+      ) {
+        delayIndex++;
+      }
+
+      continue;
+    }
+
+    if (!availableModels.length) {
+      console.error(
+        "❌ अहिले कुनै usable Gemini Flash model उपलब्ध छैन।"
+      );
+
+      const delay =
+        GEMINI_RETRY_DELAYS[
+          Math.min(
+            delayIndex,
+            GEMINI_RETRY_DELAYS.length - 1
+          )
+        ];
+
+      console.log(
+        `🔄 ${delay / 1000} sec पछि फेरि उपलब्ध models खोजिँदैछ...`
+      );
+
+      await sleep(delay);
+
+      if (
+        delayIndex <
+        GEMINI_RETRY_DELAYS.length - 1
+      ) {
+        delayIndex++;
+      }
+
+      continue;
+    }
+
+    // ------------------------------------------------------
+    // FIRST PASS:
+    // प्रत्येक available model एकपटक try गर्ने।
+    // Temporary/high-demand भए retry queue मा राख्ने।
+    // Unsupported/permanent भए skip गर्ने।
+    // ------------------------------------------------------
+
+    retryModels = [];
+
+    for (const model of availableModels) {
+      try {
+        const result = await generateWithSingleModel(
+          model.id,
+          promptText,
+          expectedDate
+        );
+
+        return result;
+
+      } catch (err) {
+        const { status, message } =
+          getGeminiErrorInfo(err);
+
+        console.warn(
+          `⚠️ मोडल ${model.id} असफल भयो: ${message}`
+        );
+
+        if (isPermanentGeminiError(err)) {
+          console.warn(
+            `⏭️ ${model.id} unsupported/deprecated/blocked जस्तो देखियो। यो model skip गरिँदैछ।`
+          );
+
+          continue;
+        }
+
+        if (isRetryableGeminiError(err)) {
+          console.log(
+            `⏳ ${model.id} temporary/high-demand समस्या हो। Retry queue मा राखियो।`
+          );
+
+          retryModels.push(model);
+          continue;
+        }
+
+        // Unknown generation error:
+        // अर्को model मा जान्छौं, तर retry queue मा पनि राख्छौं।
+        console.log(
+          `🔄 ${model.id} मा unknown temporary error देखियो। Retry queue मा राखियो।`
+        );
+
+        retryModels.push(model);
+      }
+    }
+
+    // ------------------------------------------------------
+    // ALL MODELS FAILED:
+    // अब retry loop सुरु हुन्छ।
+    // 5s → 10s → 20s → 30s → 40s → 60s
+    // त्यसपछि हरेक 60s मा continue.
+    // ------------------------------------------------------
+
+    if (!retryModels.length) {
+      console.log(
+        "⚠️ पहिलो pass मा retry गर्न मिल्ने model भेटिएन। नयाँ models फेरि खोजिँदैछ..."
+      );
+
+      const delay =
+        GEMINI_RETRY_DELAYS[
+          Math.min(
+            delayIndex,
+            GEMINI_RETRY_DELAYS.length - 1
+          )
+        ];
+
+      await sleep(delay);
+
+      if (
+        delayIndex <
+        GEMINI_RETRY_DELAYS.length - 1
+      ) {
+        delayIndex++;
+      }
+
+      continue;
+    }
+
+    const retryDelay =
+      GEMINI_RETRY_DELAYS[
+        Math.min(
+          delayIndex,
+          GEMINI_RETRY_DELAYS.length - 1
+        )
+      ];
+
+    console.log(
+      `⏳ सबै available models temporary fail भए। ${retryDelay / 1000} sec पछि retry सुरु हुँदैछ...`
+    );
+
+    await sleep(retryDelay);
+
+    if (
+      delayIndex <
+      GEMINI_RETRY_DELAYS.length - 1
+    ) {
+      delayIndex++;
+    }
+
+    // ------------------------------------------------------
+    // RETRY PASS:
+    // High-demand/temporary-failed models फेरि try गर्ने।
+    // सफल नभएसम्म loop जारी रहन्छ।
+    // ------------------------------------------------------
+
+    const stillRetryable = [];
+
+    for (const model of retryModels) {
+      try {
+        const result = await generateWithSingleModel(
+          model.id,
+          promptText,
+          expectedDate
+        );
+
+        return result;
+
+      } catch (err) {
+        const { message } =
+          getGeminiErrorInfo(err);
+
+        console.warn(
+          `⚠️ Retry मा ${model.id} फेरि असफल: ${message}`
+        );
+
+        if (isPermanentGeminiError(err)) {
+          console.warn(
+            `⏭️ ${model.id} अब unsupported/deprecated/blocked देखियो। Retry list बाट हटाइयो।`
+          );
+
+          continue;
+        }
+
+        stillRetryable.push(model);
+      }
+    }
+
+    // ------------------------------------------------------
+    // Retry पछि सबै fail भए:
+    // अर्को loop मा Google बाट fresh model list फेरि detect हुन्छ।
+    // ------------------------------------------------------
+
+    retryModels = stillRetryable;
+
+    if (!retryModels.length) {
+      console.log(
+        "🔄 Retry list खाली भयो। Google बाट नयाँ available models फेरि detect गरिँदैछ..."
+      );
+    } else {
+      console.log(
+        `🔁 ${retryModels.length} वटा model अझै retry गर्न बाँकी छन्।`
+      );
+    }
+  }
 }
 
 
@@ -384,29 +872,33 @@ Return ONLY a valid JSON object matching this exact structure:
 ⚡ CRITICAL: Do not include any extra markdown or text, only output valid JSON.`;
 
   try {
-    const content = await callGeminiAI(prompt);
+    const generatedData = await callGeminiAI(
+      prompt,
+      dateEn
+    );
 
-    const cleanJson = content
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
-
+    // IMPORTANT:
+    // Cache is updated ONLY after successful valid generation.
     cache = {
-      data: JSON.parse(cleanJson),
+      data: generatedData,
       last_updated: new Date().toISOString()
     };
 
     console.log(
-      "✅ Success! जेमिनीबाट सफलतापूर्वक अनुवाद र राशिफल तयार भयो।"
+      `✅ Success! ${dateEn} को राशिफल सफलतापूर्वक generate भयो र cache update भयो।`
     );
 
     return true;
+
   } catch (err) {
     console.error(
       "❌ Gemini AI Processing Failed:",
       err.message
     );
 
+    // IMPORTANT:
+    // Do NOT restore old cache here.
+    // Old-date Rashifal must never be shown as today's Rashifal.
     return false;
   }
 }
@@ -417,28 +909,65 @@ Return ONLY a valid JSON object matching this exact structure:
 // ==========================================================
 
 async function runWorkflow() {
-  const {
-    date_en,
-    day,
-    date_np
-  } = getNepaliDateText();
+  if (workflowRunning) {
+    console.log(
+      "⚠️ Rashifal workflow already running. अर्को workflow सुरु गरिँदैन।"
+    );
 
-  console.log(
-    `🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`
-  );
+    return false;
+  }
 
-  const {
-    data: rawData,
-    source
-  } = await fetchRawData();
+  workflowRunning = true;
 
-  return await processAndGenerate(
-    rawData,
-    date_en,
-    day,
-    date_np,
-    source
-  );
+  try {
+    const {
+      date_en,
+      day,
+      date_np
+    } = getNepaliDateText();
+
+    console.log(
+      `🚀 ${date_en} (${day}) को लागि राशिफल वर्कफ्लो सुरु हुँदैछ...`
+    );
+
+    // IMPORTANT:
+    // New-day generation starts with NO visible old cache.
+    // This prevents yesterday's Rashifal from being shown today.
+    cache = {
+      data: null,
+      last_updated: null
+    };
+
+    const {
+      data: rawData,
+      source
+    } = await fetchRawData();
+
+    return await processAndGenerate(
+      rawData,
+      date_en,
+      day,
+      date_np,
+      source
+    );
+
+  } catch (err) {
+    console.error(
+      "❌ Rashifal workflow failed:",
+      err.message
+    );
+
+    // Never keep/show old-date data after a failed new-day workflow.
+    cache = {
+      data: null,
+      last_updated: null
+    };
+
+    return false;
+
+  } finally {
+    workflowRunning = false;
+  }
 }
 
 
@@ -463,11 +992,26 @@ cron.schedule(
 // ==========================================================
 
 app.get("/api/rasifal", (req, res) => {
+  const {
+    date_en: currentDate
+  } = getNepaliDateText();
+
+  // No cache = today's Rashifal is not ready.
   if (!cache.data) {
     return res.status(503).json({
       status: "error",
       message:
-        "आजको राशिफल केही technical problem ले उपलब्ध हुन सकेन, कृपया केही समय पछाडि try गर्नुहोस्।"
+        "आजको राशिफल उपलब्ध छैन। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।"
+    });
+  }
+
+  // IMPORTANT:
+  // Never return yesterday/old-date Rashifal.
+  if (cache.data.date !== currentDate) {
+    return res.status(503).json({
+      status: "error",
+      message:
+        "आजको राशिफल उपलब्ध छैन। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।"
     });
   }
 
@@ -480,6 +1024,14 @@ app.get("/api/rasifal", (req, res) => {
 // ==========================================================
 
 app.get("/api/generate-now", async (req, res, next) => {
+  if (workflowRunning) {
+    return res.status(409).json({
+      status: "error",
+      message:
+        "राशिफल अहिले generate हुँदैछ। कृपया केही समयपछि फेरि प्रयास गर्नुहोस्।"
+    });
+  }
+
   const success = await runWorkflow();
 
   if (success) {
@@ -518,3 +1070,4 @@ app.listen(PORT, async () => {
     await runWorkflow();
   }
 });
+````
