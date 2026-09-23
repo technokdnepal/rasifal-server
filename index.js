@@ -315,6 +315,28 @@ const GEMINI_RETRY_DELAYS = [
   15000
 ];
 
+// Per-request timeout so a hung Gemini call cannot hang the workflow
+// forever. Minimal fix: SDK calls have no timeout option, so race them.
+const GEMINI_REQUEST_TIMEOUT_MS = 60000;
+
+function withGeminiTimeout(promise, label = "Gemini request") {
+  let timer;
+
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} timed out after ${GEMINI_REQUEST_TIMEOUT_MS}ms.`
+        )
+      );
+    }, GEMINI_REQUEST_TIMEOUT_MS);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -398,6 +420,8 @@ function isRetryableGeminiError(err) {
   }
 
   return (
+    lowerMessage.includes("timed out") ||
+    lowerMessage.includes("timeout") ||
     lowerMessage.includes("high demand") ||
     lowerMessage.includes("temporarily unavailable") ||
     lowerMessage.includes("service unavailable") ||
@@ -418,11 +442,14 @@ async function getAvailableGeminiModels() {
   );
 
   const pager =
-    await ai.models.list({
-      config: {
-        pageSize: 100
-      }
-    });
+    await withGeminiTimeout(
+      ai.models.list({
+        config: {
+          pageSize: 100
+        }
+      }),
+      "Gemini model discovery"
+    );
 
   const discovered = [];
 
@@ -680,10 +707,13 @@ async function callGeminiWithValidator(
         );
 
         const response =
-          await ai.models.generateContent({
-            model: model.id,
-            contents: promptText
-          });
+          await withGeminiTimeout(
+            ai.models.generateContent({
+              model: model.id,
+              contents: promptText
+            }),
+            `Gemini generateContent (${model.id})`
+          );
 
         if (
           !response ||
