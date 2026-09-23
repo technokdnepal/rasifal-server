@@ -32,7 +32,7 @@ let cache = {
 // Prevent overlapping Rashifal workflows
 let workflowRunning = false;
 
-// Daily retry-window state: bounded 4:00-6:00 AM schedule.
+// Daily retry-window state: bounded 12:05 AM-6:00 AM schedule.
 // A date-stamped flag prevents repeat same-day generation after success.
 let dailyAttempt = {
   date_en: null,
@@ -1592,9 +1592,10 @@ async function runWorkflow(options = {}) {
 }
 
 // ==========================================================
-// DAILY 4:00-6:00 AM RETRY SCHEDULE — FIXED CRON TIMES ONLY
+// DAILY 12:05 AM-6:00 AM RETRY SCHEDULE — FIXED CRON TIMES ONLY
 // ==========================================================
-// Exact required times: 4:00, 4:05, 4:15, 4:30, 5:00, 5:30, 5:50.
+// Exact required times: 12:05, 12:30, 1:00, 1:30, 2:00, 3:00,
+// 3:30, 4:00, 4:30, 5:00, 5:30, 5:50. Intentional 2:00-3:00 gap.
 // Each tick is cache-first, stale-source guarded, overlap guarded,
 // and stops entirely once today's Rashifal is cached. No loops,
 // no dynamic timers, so generation cannot continue past 6:00 AM.
@@ -1611,9 +1612,14 @@ function scheduleDailyRetry(cronTime, label) {
   );
 }
 
+scheduleDailyRetry("5 0 * * *", "daily-0-05");
+scheduleDailyRetry("30 0 * * *", "daily-0-30");
+scheduleDailyRetry("0 1 * * *", "daily-1-00");
+scheduleDailyRetry("30 1 * * *", "daily-1-30");
+scheduleDailyRetry("0 2 * * *", "daily-2-00");
+scheduleDailyRetry("0 3 * * *", "daily-3-00");
+scheduleDailyRetry("30 3 * * *", "daily-3-30");
 scheduleDailyRetry("0 4 * * *", "daily-4-00");
-scheduleDailyRetry("5 4 * * *", "daily-4-05");
-scheduleDailyRetry("15 4 * * *", "daily-4-15");
 scheduleDailyRetry("30 4 * * *", "daily-4-30");
 scheduleDailyRetry("0 5 * * *", "daily-5-00");
 scheduleDailyRetry("30 5 * * *", "daily-5-30");
