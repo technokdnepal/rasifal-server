@@ -1,24 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const Parser = require("rss-parser");
+const axios = require("axios");
 const cron = require("node-cron");
 const { GoogleGenAI } = require("@google/genai");
 
 // Initialize Gemini AI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-// Real browser headers र Custom fetch logic ताकि 403 Forbidden एरर नआओोस्
-const parser = new Parser({
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9,ne;q=0.8',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Connection': 'keep-alive'
-  },
-  timeout: 15000
-});
+const parser = new Parser();
 
 // RSS Feeds List
 const RSS_FEEDS = [
@@ -97,16 +86,35 @@ function calculateScore(title, content) {
   return score;
 }
 
-// Scrape and AI Process Workflow
+// Scrape and AI Process Workflow with Real Mozilla/Chrome Browser Headers
 async function processIpoNews() {
   console.log("🔍 [IPO] Checking RSS feeds for new IPO/Results...");
 
   for (const feedUrl of RSS_FEEDS) {
     try {
-      // वेबसाइटलाई एकैपटक धेरै भार नपरोस् र 403 ब्लक नहोस् भनेर बीचमा ३ देखि ५ सेकेन्डको रेन्डम ग्याप राखिएको छ
+      // वेबसाइटलाई ब्लक गर्नबाट बचाउन ३ देखि ६ सेकेन्डको रेन्डम ग्याप
       await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 3000) + 3000));
 
-      const feed = await parser.parseURL(feedUrl);
+      // वास्तविक Mozilla Firefox र Windows PC बाट भिजिट गरेको जस्तो देखिने Headers
+      const response = await axios.get(feedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'ne,en-US;q=0.7,en;q=0.3',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Cache-Control': 'max-age=0'
+        },
+        timeout: 15000
+      });
+
+      // Axios ले तानेको XML डेटालाई Parser मा पठाउने
+      const feed = await parser.parseString(response.data);
       
       for (const item of feed.items) {
         const link = item.link || item.guid;
@@ -146,16 +154,16 @@ async function processIpoNews() {
 
           for (const modelName of models) {
             try {
-              const response = await ai.models.generateContent({
+              const aiResponse = await ai.models.generateContent({
                 model: modelName,
                 contents: prompt
               });
 
-              const rawText = response.text.replace(/```json|```/g, "").trim();
+              const rawText = aiResponse.text.replace(/```json|```/g, "").trim();
               aiResult = JSON.parse(rawText);
               if (aiResult) break;
             } catch (modelErr) {
-              // Try next model if current fails
+              // अर्को मोडल ट्राइ गर्ने
             }
           }
 
@@ -167,7 +175,7 @@ async function processIpoNews() {
               description: aiResult.description || snippet.substring(0, 100),
               company_name: aiResult.company_name || "Company",
               image_url: item.enclosure?.url || "https://technokd.com/wp-content/uploads/default-ipo.jpg",
-              redirect_target: aiResult.redirect_target || "WEB_VIEW",
+              redirect_target: aiResult.redirect_target || "WEBVIEW",
               source_url: link,
               published_at: new Date().toISOString(),
               is_active: true
@@ -181,7 +189,6 @@ async function processIpoNews() {
         }
       }
     } catch (err) {
-      // यदि कुनै एउटा साइटमा 403 वा एरर आएपनि सर्वर क्र्यास हुँदैन, यसले अर्को साइट चेक गर्न जारी राख्छ
       console.warn(`⚠️ [IPO] Error fetching feed from ${feedUrl}: ${err.message}`);
     }
   }
