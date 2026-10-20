@@ -1,15 +1,17 @@
 const express = require("express");
 const router = express.Router();
 const Parser = require("rss-parser");
-const axios = require("axios");
-const cheerio = require("cheerio");
 const cron = require("node-cron");
 const { GoogleGenAI } = require("@google/genai");
 
 // Initialize Gemini AI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const parser = new Parser({
-  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  headers: { 
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5'
+  }
 });
 
 // RSS Feeds List
@@ -41,22 +43,50 @@ const ACTION_KEYWORDS = [
 let ipoNotifications = [];
 let processedUrls = new Set();
 
+// -------------------------------------------------------------------------
+// DYNAMIC MODEL DISCOVERY (जसरी तपाईंको index.js मा आफै मोडल खोज्छ)
+// -------------------------------------------------------------------------
+async function getAvailableGeminiModels() {
+  try {
+    const pager = await ai.models.list({ config: { pageSize: 50 } });
+    const discovered = [];
+
+    for await (const model of pager) {
+      const name = model?.baseModelId || (model?.name ? model.name.replace(/^models\//, "") : "");
+      if (!name) continue;
+
+      const lowerName = name.toLowerCase();
+      const supportedMethods = model?.supportedGenerationMethods || [];
+      
+      if (lowerName.startsWith("gemini-") && lowerName.includes("flash") && supportedMethods.includes("generateContent")) {
+        discovered.push(name);
+      }
+    }
+
+    if (discovered.length > 0) {
+      return discovered;
+    }
+  } catch (err) {
+    console.warn("⚠️ Model discovery failed, using fallback models:", err.message);
+  }
+
+  // Fallback models यदि लिस्ट फेला परेन भने
+  return ["gemini-2.5-flash", "gemini-flash-latest"];
+}
+
 // Scoring Function
 function calculateScore(title, content) {
   const text = `${title} ${content}`;
   
-  // 1. Negative Check
   for (const neg of NEGATIVE_KEYWORDS) {
     if (text.includes(neg)) return -50;
   }
 
   let score = 0;
-  // 2. Core Keywords Check (+20)
   for (const core of CORE_KEYWORDS) {
     if (text.includes(core)) score += 20;
   }
 
-  // 3. Action Keywords Check (+15)
   for (const action of ACTION_KEYWORDS) {
     if (text.includes(action)) score += 15;
   }
@@ -66,10 +96,13 @@ function calculateScore(title, content) {
 
 // Scrape and AI Process Workflow
 async function processIpoNews() {
-  console.log("🔍 Fetching IPO news from RSS feeds...");
+  console.log("🔍 [IPO] Checking RSS feeds for new IPO/Results...");
 
   for (const feedUrl of RSS_FEEDS) {
     try {
+      // Random delay to prevent website blocking (403 Forbidden)
+      await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 3000) + 2000));
+
       const feed = await parser.parseURL(feedUrl);
       
       for (const item of feed.items) {
@@ -82,91 +115,91 @@ async function processIpoNews() {
 
         // Threshold check (Must be >= 35)
         if (score >= 35) {
-          console.log(`🎯 Valid News Found (Score: ${score}): ${title}`);
+          console.log(`🎯 [IPO] Potential News Found (Score: ${score}): ${title}`);
           processedUrls.add(link);
 
-          // Gemini AI Analysis
-          const prompt = `
-          तपाईं एउटा शेयर बजार विश्लेषक हो। तल दिइएको समाचार शीर्षक र लिङ्कको आधारमा विश्लेषण गर्नुहोस्:
-          शीर्षक: ${title}
-          विवरण: ${snippet}
+          // Get available models dynamically
+          const models = await getAvailableGeminiModels();
+          let aiResult = null;
 
-          यदि यो समाचार नयाँ IPO/Right Share खुलाएको वा IPO को बाँडफाँड/नतिजा (Result) सम्बन्धी हो भने मात्र JSON ढाँचामा उत्तर दिनुहोस्।
-          यदि यो अरू नै समाचार हो भने {"isValid": false} मात्र दिनुहोस्।
+          const prompt = `
+          Timi euta share bajar analyst hau. Tal diye ko news title ra description analyze gara:
+          Title: ${title}
+          Snippet: ${snippet}
+
+          Yadi yo news naya IPO, Right Share kholiyeko ba IPO ko badband/result sambandhi ho vane matra JSON format deu.
+          Yadi aru nai news ho vane {"isValid": false} matra deu.
 
           JSON Format Output:
           {
             "isValid": true/false,
-            "type": "IPO_ALERT" वा "IPO_RESULT",
-            "company_name": "कम्पनीको नाम (अंग्रेजीमा)",
-            "title": "युजरका लागि छोटो र आकर्षक शीर्षक",
-            "description": "२ लाइनको छोटो विवरण",
-            "redirect_target": "WEBVIEW" (यदि IPO_ALERT हो भने) वा "IPO_RESULT_SECTION" (यदि IPO_RESULT हो भने)
+            "type": "IPO_ALERT" ba "IPO_RESULT",
+            "company_name": "Company name in English",
+            "title": "Short and attractive notification title for user in Nepali",
+            "description": "2 line short description",
+            "redirect_target": "WEBVIEW" (yadi IPO_ALERT ho vane) ba "IPO_RESULT_SECTION" (yadi IPO_RESULT ho vane)
           }
-          Only return pure JSON.
+          Only return pure JSON. No markdown.
           `;
 
-          try {
-            const response = await ai.models.generateContent({
-              model: "gemini-2.5-flash",
-              contents: prompt
-            });
+          // Try available models one by one until one succeeds
+          for (const modelName of models) {
+            try {
+              const response = await ai.models.generateContent({
+                model: modelName,
+                contents: prompt
+              });
 
-            const rawText = response.text.replace(/```json|```/g, "").trim();
-            const aiResult = JSON.parse(rawText);
-
-            if (aiResult.isValid) {
-              const newNotification = {
-                id: `ipo_${Date.now()}`,
-                type: aiResult.type || "IPO_ALERT",
-                title: aiResult.title || title,
-                description: aiResult.description || snippet.substring(0, 100),
-                company_name: aiResult.company_name || "Company",
-                image_url: item.enclosure?.url || "https://technokd.com/wp-content/uploads/default-ipo.jpg",
-                redirect_target: aiResult.redirect_target || "WEBVIEW",
-                source_url: link,
-                published_at: new Date().toISOString(),
-                is_active: true
-              };
-
-              // Unshift to keep newest first
-              ipoNotifications.unshift(newNotification);
-              // Limit memory to latest 30 notifications
-              if (ipoNotifications.length > 30) ipoNotifications.pop();
-
-              console.log(`✅ New Notification Added: ${newNotification.title}`);
+              const rawText = response.text.replace(/```json|```/g, "").trim();
+              aiResult = JSON.parse(rawText);
+              if (aiResult) break; // Success bhayesi loop baata bahira aune
+            } catch (modelErr) {
+              // Try next model if current fails
             }
-          } catch (aiErr) {
-            console.error("Gemini Parsing Error:", aiErr.message);
+          }
+
+          if (aiResult && aiResult.isValid) {
+            const newNotification = {
+              id: `ipo_${Date.now()}`,
+              type: aiResult.type || "IPO_ALERT",
+              title: aiResult.title || title,
+              description: aiResult.description || snippet.substring(0, 100),
+              company_name: aiResult.company_name || "Company",
+              image_url: item.enclosure?.url || "https://technokd.com/wp-content/uploads/default-ipo.jpg",
+              redirect_target: aiResult.redirect_target || "WEBVIEW",
+              source_url: link,
+              published_at: new Date().toISOString(),
+              is_active: true
+            };
+
+            ipoNotifications.unshift(newNotification);
+            if (ipoNotifications.length > 20) ipoNotifications.pop();
+
+            console.log(`✅ [IPO] New Valid Notification Added: ${newNotification.title}`);
           }
         }
       }
     } catch (err) {
-      console.error(`Error fetching feed from ${feedUrl}:`, err.message);
+      console.warn(`⚠️ [IPO] Error fetching feed from ${feedUrl}: ${err.message}`);
     }
   }
 }
 
-// CRON JOB 1: Run every 30 minutes to scrape new feeds
-cron.schedule("*/30 * * * *", () => {
+// -------------------------------------------------------------------------
+// CRON SCHEDULE: हरेक ३ घण्टामा चल्ने (दिनको ८ पटक) -> `0 */3 * * *`
+// -------------------------------------------------------------------------
+cron.schedule("0 */3 * * *", () => {
+  console.log("⏰ [IPO Cron] Running scheduled 3-hour IPO check...");
   processIpoNews();
+}, {
+  scheduled: true,
+  timezone: "Asia/Kathmandu"
 });
 
-// CRON JOB 2: Daily Reminders at 8:00 AM
-cron.schedule("0 8 * * *", () => {
-  console.log("⏰ Generating Daily Reminder Notifications...");
-  ipoNotifications.forEach(item => {
-    if (item.type === "IPO_ALERT" && item.is_active) {
-      item.title = `भर्नुभयो त ${item.company_name} को IPO?`;
-      item.description = "आजै आवेदन दिनुहोस्, अन्तिम मिति नजिकै छ।";
-    }
-  });
-});
-
-// Run once on startup
+// Run once on startup after 10 seconds delay
 setTimeout(() => {
   processIpoNews();
-}, 5000);
+}, 10000);
 
 // API ENDPOINT FOR APP
 router.get("/ipo-alerts", (req, res) => {
