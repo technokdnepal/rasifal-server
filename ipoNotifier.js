@@ -6,12 +6,18 @@ const { GoogleGenAI } = require("@google/genai");
 
 // Initialize Gemini AI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+// Real browser headers र Custom fetch logic ताकि 403 Forbidden एरर नआओोस्
 const parser = new Parser({
-  headers: { 
+  headers: {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5'
-  }
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9,ne;q=0.8',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Connection': 'keep-alive'
+  },
+  timeout: 15000
 });
 
 // RSS Feeds List
@@ -43,9 +49,7 @@ const ACTION_KEYWORDS = [
 let ipoNotifications = [];
 let processedUrls = new Set();
 
-// -------------------------------------------------------------------------
-// DYNAMIC MODEL DISCOVERY (जसरी तपाईंको index.js मा आफै मोडल खोज्छ)
-// -------------------------------------------------------------------------
+// Dynamic Model Discovery (Gemini models आफै फेला पार्ने सिस्टम)
 async function getAvailableGeminiModels() {
   try {
     const pager = await ai.models.list({ config: { pageSize: 50 } });
@@ -70,7 +74,6 @@ async function getAvailableGeminiModels() {
     console.warn("⚠️ Model discovery failed, using fallback models:", err.message);
   }
 
-  // Fallback models यदि लिस्ट फेला परेन भने
   return ["gemini-2.5-flash", "gemini-flash-latest"];
 }
 
@@ -100,8 +103,8 @@ async function processIpoNews() {
 
   for (const feedUrl of RSS_FEEDS) {
     try {
-      // Random delay to prevent website blocking (403 Forbidden)
-      await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 3000) + 2000));
+      // वेबसाइटलाई एकैपटक धेरै भार नपरोस् र 403 ब्लक नहोस् भनेर बीचमा ३ देखि ५ सेकेन्डको रेन्डम ग्याप राखिएको छ
+      await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * 3000) + 3000));
 
       const feed = await parser.parseURL(feedUrl);
       
@@ -118,7 +121,6 @@ async function processIpoNews() {
           console.log(`🎯 [IPO] Potential News Found (Score: ${score}): ${title}`);
           processedUrls.add(link);
 
-          // Get available models dynamically
           const models = await getAvailableGeminiModels();
           let aiResult = null;
 
@@ -142,7 +144,6 @@ async function processIpoNews() {
           Only return pure JSON. No markdown.
           `;
 
-          // Try available models one by one until one succeeds
           for (const modelName of models) {
             try {
               const response = await ai.models.generateContent({
@@ -152,7 +153,7 @@ async function processIpoNews() {
 
               const rawText = response.text.replace(/```json|```/g, "").trim();
               aiResult = JSON.parse(rawText);
-              if (aiResult) break; // Success bhayesi loop baata bahira aune
+              if (aiResult) break;
             } catch (modelErr) {
               // Try next model if current fails
             }
@@ -166,7 +167,7 @@ async function processIpoNews() {
               description: aiResult.description || snippet.substring(0, 100),
               company_name: aiResult.company_name || "Company",
               image_url: item.enclosure?.url || "https://technokd.com/wp-content/uploads/default-ipo.jpg",
-              redirect_target: aiResult.redirect_target || "WEBVIEW",
+              redirect_target: aiResult.redirect_target || "WEB_VIEW",
               source_url: link,
               published_at: new Date().toISOString(),
               is_active: true
@@ -180,14 +181,13 @@ async function processIpoNews() {
         }
       }
     } catch (err) {
+      // यदि कुनै एउटा साइटमा 403 वा एरर आएपनि सर्वर क्र्यास हुँदैन, यसले अर्को साइट चेक गर्न जारी राख्छ
       console.warn(`⚠️ [IPO] Error fetching feed from ${feedUrl}: ${err.message}`);
     }
   }
 }
 
-// -------------------------------------------------------------------------
 // CRON SCHEDULE: हरेक ३ घण्टामा चल्ने (दिनको ८ पटक) -> `0 */3 * * *`
-// -------------------------------------------------------------------------
 cron.schedule("0 */3 * * *", () => {
   console.log("⏰ [IPO Cron] Running scheduled 3-hour IPO check...");
   processIpoNews();
